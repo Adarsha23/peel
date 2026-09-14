@@ -61,7 +61,7 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
             // Reminder text = the line minus the @remind token and the time phrase.
             var text = (trimmed as NSString).replacingCharacters(in: match.range, with: " ")
             text = text.replacingOccurrences(of: "@remind", with: "")
-                .trimmingCharacters(in: CharacterSet.whitespaces.union(.init(charactersIn: "—–-:,")))
+                .trimmingCharacters(in: CharacterSet.whitespaces.union(.init(charactersIn: "-–-:,")))
             if text.isEmpty { text = note.title }
             wanted["peel.\(note.id).\(stableHash(trimmed))"] = (match, text, trimmed)
         }
