@@ -239,6 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         for (id, controller) in controllers where !seen.contains(id) {
             controller.closeForRemoval()
+            reminders.cancelAll(for: id)
             controllers.removeValue(forKey: id)
         }
     }

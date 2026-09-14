@@ -203,6 +203,7 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
         flushPendingSave()
         panel.orderOut(nil)
         store.archive(id: note.id)
+        app.reminders.cancelAll(for: note.id)
         app.stickyWasArchived(id: note.id)
     }
 
@@ -329,6 +330,8 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
         case "behind", "park", "front", "float": run = { [weak self] in self?.toggleLayer() }
         case "archive", "done": run = { [weak self] in self?.archive() }
         case "shot", "screenshot": run = { [weak self] in self?.captureScreenshot() }
+        case "remind", "reminder":
+            run = { [weak self] in self?.showRemindPicker(target: .newLine) }
         case "date":
             run = { [weak self] in self?.textView.insertPlain(Self.slashDate.string(from: Date()), at: nil) }
         case "time":
@@ -367,6 +370,99 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
         f.dateFormat = "HH:mm"
         return f
     }()
+
+    // MARK: Reminder picker — choose a time instead of guessing the format
+
+    private enum RemindTarget {
+        case newLine                    // /remind: insert a whole @remind line at the caret
+        case replaceDate(NSRange)       // clicked a token that already has a time
+        case insertAfterToken(NSRange)  // clicked a token with no recognized time
+    }
+
+    private var remindTarget: RemindTarget = .newLine
+
+    func noteRemindClicked(tokenRange: NSRange, dateRange: NSRange?) {
+        if let dateRange {
+            showRemindPicker(target: .replaceDate(dateRange), anchor: tokenRange)
+        } else {
+            showRemindPicker(target: .insertAfterToken(tokenRange), anchor: tokenRange)
+        }
+    }
+
+    private func showRemindPicker(target: RemindTarget, anchor: NSRange? = nil) {
+        remindTarget = target
+        let menu = NSMenu()
+        for (label, date) in Self.remindOptions() {
+            let item = NSMenuItem(title: "\(label)   \(Self.remindInsert(date))",
+                                  action: #selector(remindOptionPicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = date
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let hint = NSMenuItem(title: "or type your own:  @remind tomorrow 9am call bank",
+                              action: nil, keyEquivalent: "")
+        hint.isEnabled = false
+        menu.addItem(hint)
+
+        let anchorRange = anchor ?? textView.selectedRange()
+        let screenRect = textView.firstRect(forCharacterRange: anchorRange, actualRange: nil)
+        let windowPoint = panel.convertPoint(fromScreen: NSPoint(x: screenRect.minX, y: screenRect.minY))
+        let viewPoint = textView.convert(windowPoint, from: nil)
+        menu.popUp(positioning: nil, at: viewPoint, in: textView)
+    }
+
+    @objc private func remindOptionPicked(_ sender: NSMenuItem) {
+        guard let date = sender.representedObject as? Date else { return }
+        let formatted = Self.remindInsert(date)
+        switch remindTarget {
+        case .newLine:
+            textView.insertPlain("@remind \(formatted) — ", at: nil)
+        case .replaceDate(let range):
+            textView.replaceRange(range, with: formatted)
+        case .insertAfterToken(let token):
+            textView.insertPlain(" \(formatted)", at: token.upperBound)
+        }
+        focusText()
+    }
+
+    /// The menu shows exactly the text that will be inserted, so the free-form
+    /// format teaches itself.
+    private static func remindOptions() -> [(String, Date)] {
+        let calendar = Calendar.current
+        let now = Date()
+        func rounded(_ interval: TimeInterval) -> Date {
+            let date = now.addingTimeInterval(interval)
+            let step: TimeInterval = 300
+            return Date(timeIntervalSinceReferenceDate:
+                (date.timeIntervalSinceReferenceDate / step).rounded(.up) * step)
+        }
+        var options: [(String, Date)] = [
+            ("In 30 minutes", rounded(30 * 60)),
+            ("In 1 hour", rounded(60 * 60)),
+            ("In 3 hours", rounded(3 * 60 * 60)),
+        ]
+        if let tonight = calendar.date(bySettingHour: 20, minute: 0, second: 0, of: now), tonight > now {
+            options.append(("Tonight", tonight))
+        }
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))!
+        options.append(("Tomorrow morning", calendar.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow)!))
+        options.append(("Tomorrow evening", calendar.date(bySettingHour: 18, minute: 0, second: 0, of: tomorrow)!))
+        if let monday = calendar.nextDate(after: now, matching: DateComponents(hour: 9, weekday: 2),
+                                          matchingPolicy: .nextTime) {
+            options.append(("Monday morning", monday))
+        }
+        return options
+    }
+
+    private static func remindInsert(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let format = calendar.isDate(date, equalTo: Date(), toGranularity: .year)
+            ? "MMM d, h:mm a" : "MMM d yyyy, h:mm a"
+        let f = DateFormatter()
+        f.dateFormat = format
+        return f.string(from: date)
+    }
 
     private func nextIndexedName(prefix: String) -> String {
         let existing = Set(store.attachments(for: note.id).map(\.lastPathComponent))

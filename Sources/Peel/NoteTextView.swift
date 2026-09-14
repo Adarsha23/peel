@@ -8,6 +8,8 @@ protocol NoteTextViewDelegate: AnyObject {
     func noteHide()
     /// A /command typed alone on a line + return. True = handled (line is erased).
     func noteCommand(_ command: String) -> Bool
+    /// Click on an @remind token — open the time picker.
+    func noteRemindClicked(tokenRange: NSRange, dateRange: NSRange?)
 }
 
 /// A plain-text-first editor with live glyph styling:
@@ -33,6 +35,7 @@ final class NoteTextView: NSTextView {
     /// Where this note's attachments live; used to resolve ⟦image⟧ tokens.
     var attachmentsDir: URL?
     private var tokenLinks: [(range: NSRange, url: URL)] = []
+    private var remindTokens: [(token: NSRange, dateRange: NSRange?)] = []
 
     private static let linkDetector = try? NSDataDetector(
         types: NSTextCheckingResult.CheckingType.link.rawValue)
@@ -93,6 +96,7 @@ final class NoteTextView: NSTextView {
         storage.beginEditing()
         storage.setAttributes(baseAttributes, range: full)
 
+        remindTokens = []
         var inFence = false
         var lineStart = 0
         while lineStart < ns.length {
@@ -147,9 +151,33 @@ final class NoteTextView: NSTextView {
                 default: break
                 }
             }
+            // @remind lines: live feedback on whether a time was understood.
             if trimmed.hasPrefix("@remind") {
-                storage.addAttribute(.foregroundColor, value: NSColor.systemOrange,
-                                     range: NSRange(location: glyphLocation, length: 7))
+                let tokenRange = NSRange(location: glyphLocation, length: 7)
+                storage.addAttribute(.cursor, value: NSCursor.pointingHand, range: tokenRange)
+                if let (date, matchRange) = Reminders.detect(in: line) {
+                    let dateRange = NSRange(location: lineStart + matchRange.location,
+                                            length: matchRange.length)
+                    storage.addAttribute(.foregroundColor, value: NSColor.systemOrange, range: tokenRange)
+                    storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue,
+                                         range: dateRange)
+                    storage.addAttribute(.underlineColor, value: NSColor.systemOrange, range: dateRange)
+                    var tip = "Reminder: \(NoteTextView.remindTip.string(from: date))"
+                    if Reminders.notificationsDenied {
+                        tip += " — but notifications for Peel are off in System Settings"
+                    } else if !Reminders.isAvailable {
+                        tip += " — run the installed Peel.app for notifications"
+                    }
+                    storage.addAttribute(.toolTip, value: tip, range: lineRange)
+                    remindTokens.append((tokenRange, dateRange))
+                } else {
+                    storage.addAttribute(.foregroundColor, value: NSColor.systemRed, range: tokenRange)
+                    storage.addAttribute(
+                        .toolTip,
+                        value: "No time recognized — click @remind to pick one, or write e.g. “tomorrow 9am” or “Sep 20, 2:30 PM”",
+                        range: lineRange)
+                    remindTokens.append((tokenRange, nil))
+                }
             }
         }
 
@@ -190,6 +218,19 @@ final class NoteTextView: NSTextView {
         let location = min(index ?? selectedRange().location, length)
         insertText(text, replacementRange: NSRange(location: location, length: 0))
     }
+
+    func replaceRange(_ range: NSRange, with text: String) {
+        if shouldChangeText(in: range, replacementString: text) {
+            replaceCharacters(in: range, with: text)
+            didChangeText()
+        }
+    }
+
+    private static let remindTip: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE, MMM d 'at' h:mm a"
+        return f
+    }()
 
     // MARK: Editing behaviors
 
@@ -319,6 +360,10 @@ final class NoteTextView: NSTextView {
         let index = characterIndexForInsertion(at: point)
         for (range, url) in tokenLinks where NSLocationInRange(index, range) {
             NSWorkspace.shared.open(url.resolvingSymlinksInPath())
+            return
+        }
+        for (token, dateRange) in remindTokens where NSLocationInRange(index, token) {
+            noteDelegate?.noteRemindClicked(tokenRange: token, dateRange: dateRange)
             return
         }
         let ns = string as NSString

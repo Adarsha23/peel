@@ -105,7 +105,7 @@ final class HelpController: NSObject, NSWindowDelegate {
         row("[] + space", "todo")
         row("- + space", "bullet")
         row("``` … ```", "code block")
-        row("@remind 9am …", "schedules a notification")
+        row("@remind", "click it to pick a time · orange = scheduled, red = no time found")
         row("⟦image-1.png⟧", "click to view · drop/paste to add")
 
         section("SLASH — TYPE ON ITS OWN LINE + RETURN")
@@ -113,6 +113,7 @@ final class HelpController: NSObject, NSWindowDelegate {
         row("/new  /search", "sticky · search")
         row("/hide  /behind", "hide · layer toggle")
         row("/archive  /shot", "archive · screenshot")
+        row("/remind", "set a reminder — pick a time from a menu")
         row("/date  /time", "insert date · time")
         row("/copy  /open", "copy note as markdown · show in Finder")
         row("/yellow …", "any color: cream blue green lavender pink graphite")

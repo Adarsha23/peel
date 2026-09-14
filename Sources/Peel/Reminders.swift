@@ -12,24 +12,52 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
 
     var reveal: ((String) -> Void)?
 
-    private let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
+    /// One detector shared with the editor, so live styling and actual
+    /// scheduling always agree on what parses.
+    static let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
+
+    /// True when the user has declined notification permission — the editor
+    /// surfaces this in the @remind tooltip instead of failing silently.
+    private(set) static var notificationsDenied = false
+
     private var scheduled: [String: Set<String>] = [:] // note id -> notification ids
     private var authorizationRequested = false
+
+    /// First future date found in a line, with its range in that line.
+    static func detect(in line: String) -> (date: Date, range: NSRange)? {
+        guard let detector else { return nil }
+        let ns = line as NSString
+        let matches = detector.matches(in: line, range: NSRange(location: 0, length: ns.length))
+        for match in matches {
+            if let date = match.date, date > Date() { return (date, match.range) }
+        }
+        return nil
+    }
 
     func activate() {
         guard Reminders.isAvailable else { return }
         UNUserNotificationCenter.current().delegate = self
+        refreshAuthorizationStatus()
+    }
+
+    private func refreshAuthorizationStatus() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            Reminders.notificationsDenied = settings.authorizationStatus == .denied
+        }
     }
 
     func sync(note: Note) {
-        guard Reminders.isAvailable, let detector else { return }
+        guard Reminders.isAvailable else { return }
         var wanted: [String: (Date, String)] = [:]
         for line in note.body.components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard trimmed.hasPrefix("@remind") else { continue }
-            let text = String(trimmed.dropFirst("@remind".count)).trimmingCharacters(in: .whitespaces)
-            let matches = detector.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            guard let date = matches.compactMap(\.date).first(where: { $0 > Date() }) else { continue }
+            guard let (date, dateRange) = Reminders.detect(in: trimmed) else { continue }
+            // Notification body = the line minus the @remind token and the date phrase.
+            var text = (trimmed as NSString).replacingCharacters(in: dateRange, with: " ")
+            text = text.replacingOccurrences(of: "@remind", with: "")
+                .trimmingCharacters(in: CharacterSet.whitespaces.union(.init(charactersIn: "—–-:,")))
+            if text.isEmpty { text = note.title }
             wanted["peel.\(note.id).\(stableHash(trimmed))"] = (date, text)
         }
 
@@ -54,11 +82,25 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// Cancel everything scheduled for a note (it was archived or deleted).
+    func cancelAll(for noteID: String) {
+        guard Reminders.isAvailable else { return }
+        let center = UNUserNotificationCenter.current()
+        let prefix = "peel.\(noteID)."
+        scheduled[noteID] = nil
+        center.getPendingNotificationRequests { requests in
+            let stale = requests.map(\.identifier).filter { $0.hasPrefix(prefix) }
+            if !stale.isEmpty { center.removePendingNotificationRequests(withIdentifiers: stale) }
+        }
+    }
+
     private func requestAuthorizationIfNeeded() {
         guard !authorizationRequested else { return }
         authorizationRequested = true
         UNUserNotificationCenter.current()
-            .requestAuthorization(options: [.alert, .sound]) { _, _ in }
+            .requestAuthorization(options: [.alert, .sound]) { [weak self] _, _ in
+                self?.refreshAuthorizationStatus()
+            }
     }
 
     private func stableHash(_ s: String) -> String {
