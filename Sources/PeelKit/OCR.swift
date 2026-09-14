@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(Vision)
 import Vision
+#endif
 
 /// On-device text extraction for image attachments. Each image gets a sidecar at
 /// attachments/<id>/.ocr/<name>.txt (hidden, so the strip never shows it) that
@@ -17,6 +19,7 @@ public enum OCR {
     /// Recognize text and write the sidecar; skips work if one already exists.
     /// An empty sidecar is still written so failed/blank images aren't rescanned.
     public static func index(_ image: URL) {
+        #if canImport(Vision)
         guard imageExtensions.contains(image.pathExtension.lowercased()) else { return }
         let sidecar = sidecarURL(for: image)
         guard !FileManager.default.fileExists(atPath: sidecar.path) else { return }
@@ -32,6 +35,7 @@ public enum OCR {
                                                      withIntermediateDirectories: true)
             try? text.write(to: sidecar, atomically: true, encoding: .utf8)
         }
+        #endif
     }
 
     public static func text(for image: URL) -> String? {

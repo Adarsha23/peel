@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(UserNotifications)
 import UserNotifications
+#endif
 
 /// Terminal interface. Operates directly on the note files, so it works whether
 /// or not the app is running; the app's directory watcher picks up changes live.
@@ -27,11 +29,12 @@ public enum CLI {
 
     private static func list(_ store: NoteStore, includeArchived: Bool) -> Int32 {
         let notes = store.loadAll(includeArchived: includeArchived)
-        if notes.isEmpty { print("No notes yet. Try: peel new \"your first thought\""); return 0 }
+        if notes.isEmpty { print("nothing here yet. peel new \"first thought\" and we're rolling"); return 0 }
         for note in notes {
             let todos = note.todoCounts
             let todoTag = todos.open + todos.done > 0 ? "  [\(todos.done)/\(todos.open + todos.done)]" : ""
-            print("\(note.id)  \(relative(note.updated))\(todoTag)  \(note.title)")
+            let age = (note.updated.shortAge + " ago").padding(toLength: 8, withPad: " ", startingAt: 0)
+            print("\(note.id)  \(age)\(todoTag)  \(note.title)")
         }
         return 0
     }
@@ -83,7 +86,7 @@ public enum CLI {
         let notes = store.loadAll(includeArchived: true).filter { Calendar.current.isDateInToday($0.updated) }
         if notes.isEmpty { print("No notes touched today."); return 0 }
         for note in notes {
-            print("## \(note.id) — \(note.title)\n")
+            print("## \(note.id) · \(note.title)\n")
             print(note.body)
             print("")
         }
@@ -102,6 +105,10 @@ public enum CLI {
     /// Why didn't my reminder fire? Reports the actual notification permission
     /// state and every pending reminder with its scheduled time.
     private static func doctor() -> Int32 {
+        #if !canImport(UserNotifications)
+        print("doctor checks macOS notification plumbing; on this platform your notes are just files, nothing to diagnose")
+        return 0
+        #else
         guard Bundle.main.bundlePath.hasSuffix(".app"), Bundle.main.bundleIdentifier != nil else {
             // Through the CLI symlink, Bundle.main sees /opt/homebrew/bin and the
             // notification daemon won't talk to us — re-exec the real binary.
@@ -117,7 +124,7 @@ public enum CLI {
                     return process.terminationStatus
                 } catch {}
             }
-            print("not running from Peel.app — notifications need the installed bundle (make install)")
+            print("not running from Peel.app. notifications need the installed bundle: make install")
             return 1
         }
         let center = UNUserNotificationCenter.current()
@@ -135,11 +142,11 @@ public enum CLI {
         case .authorized, .provisional:
             print("notifications: allowed ✓")
         case .denied:
-            print("notifications: DENIED — reminders are scheduled but macOS won't show them.")
+            print("notifications: DENIED. macOS is eating your reminders.")
             print("fix: System Settings → Notifications → Peel → Allow Notifications")
             print("     open \"x-apple.systempreferences:com.apple.preference.notifications\"")
         case .notDetermined:
-            print("notifications: never asked/answered — requesting now, watch for the dialog")
+            print("notifications: never answered. asking now, watch for the dialog")
             print("(it appears over the desktop, not over fullscreen apps)")
             var granted = false
             center.requestAuthorization(options: [.alert, .sound]) { ok, _ in
@@ -147,7 +154,7 @@ public enum CLI {
                 semaphore.signal()
             }
             semaphore.wait()
-            print(granted ? "granted ✓ — reminders will fire now" : "not granted — reminders won't show")
+            print(granted ? "granted, reminders will fire now" : "not granted, reminders won't show")
         @unknown default:
             print("notifications: unknown status")
         }
@@ -158,12 +165,12 @@ public enum CLI {
             switch settings.alertStyle {
             case .banner: style = "banners ✓"
             case .alert: style = "alerts ✓"
-            case .none: style = "NONE — notifications are invisible! Set Peel's alert style to Banners in System Settings"
+            case .none: style = "NONE. invisible notifications, set Peel to Banners in System Settings"
             @unknown default: style = "?"
             }
             print("alert style: \(style)")
             if settings.alertSetting == .disabled {
-                print("alerts: OFF — enable 'Show as banners' for Peel in System Settings")
+                print("alerts: OFF. enable 'Show as banners' for Peel in System Settings")
             }
             if settings.soundSetting == .disabled {
                 print("sound: off (chime won't play)")
@@ -178,7 +185,7 @@ public enum CLI {
         semaphore.wait()
 
         if pending.isEmpty {
-            print("pending reminders: none — @remind lines schedule when their note saves while the app is running")
+            print("pending reminders: none. @remind lines schedule when their note saves while the app runs")
         } else {
             let f = DateFormatter()
             f.dateFormat = "EEE MMM d, h:mm a"
@@ -207,6 +214,7 @@ public enum CLI {
         }
         print("also check: a Focus / Do Not Disturb mode silences banners even when allowed.")
         return 0
+        #endif
     }
 
     /// Remote-controls the running app over a distributed notification.
@@ -222,20 +230,10 @@ public enum CLI {
         return 0
     }
 
-    private static func relative(_ date: Date) -> String {
-        let s = Int(-date.timeIntervalSinceNow)
-        switch s {
-        case ..<60: return "now".padding(toLength: 7, withPad: " ", startingAt: 0)
-        case ..<3600: return "\(s / 60)m ago".padding(toLength: 7, withPad: " ", startingAt: 0)
-        case ..<86400: return "\(s / 3600)h ago".padding(toLength: 7, withPad: " ", startingAt: 0)
-        default: return "\(s / 86400)d ago".padding(toLength: 7, withPad: " ", startingAt: 0)
-        }
-    }
-
     @discardableResult
     private static func help() -> Int32 {
         print("""
-        peel — floating sticky notes, stored as plain markdown
+        peel: sticky notes that float over everything, stored as plain markdown
 
         usage:
           peel                  launch / focus the app

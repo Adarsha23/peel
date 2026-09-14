@@ -402,15 +402,12 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
 
     // MARK: Attachments
 
-    private static let imageExtensions: Set<String> =
-        ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp"]
-
     /// Images get an inline ⟦token⟧ where you dropped them; other files go to the strip.
     func noteAttachFiles(_ urls: [URL], at index: Int?) {
         var tokens: [String] = []
         for url in urls {
             guard let stored = store.attach(fileAt: url, to: note.id) else { continue }
-            if Self.imageExtensions.contains(stored.pathExtension.lowercased()) {
+            if OCR.imageExtensions.contains(stored.pathExtension.lowercased()) {
                 tokens.append("⟦\(stored.lastPathComponent)⟧")
             }
         }
@@ -908,23 +905,23 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
 
 // MARK: - Supporting views
 
-/// The colored paper layer over the blur material.
-final class TintView: NSView {
+/// The colored paper layer over the blur material: stickies and reminder cards.
+class TintView: NSView {
     var color: NSColor = .clear { didSet { needsDisplay = true } }
     override var wantsUpdateLayer: Bool { true }
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
+    init(cornerRadius: CGFloat = Theme.cornerRadius) {
+        super.init(frame: .zero)
         wantsLayer = true
-        layer?.cornerRadius = Theme.cornerRadius
+        layer?.cornerRadius = cornerRadius
         layer?.borderWidth = 0.5
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     override func updateLayer() {
-        layer?.backgroundColor = color.withAlphaComponent(0.88).cgColor
-        layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.08).cgColor
+        layer?.backgroundColor = color.withAlphaComponent(0.9).cgColor
+        layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.09).cgColor
     }
 }
 

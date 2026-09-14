@@ -59,6 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        config = Config.load(from: store.root)
+        keyMap = KeyMap(overrides: config.keys)
         buildMainMenu()
         buildStatusItem()
 
@@ -71,8 +73,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.show(focus: false)
         }
 
-        config = Config.load(from: store.root)
-        keyMap = KeyMap(overrides: config.keys)
         if let spec = config.toggleHotkey ?? "cmd+shift+space" as String?,
            let hotkey = HotKey(spec: spec, handler: { [weak self] in self?.toggleStickies() }) {
             hotkeys.append(hotkey)
@@ -466,7 +466,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         let edgeItem = NSMenuItem(title: "Shelf Edge", action: nil, keyEquivalent: "")
         let edgeMenu = NSMenu()
-        let currentEdge = ShelfEdge(rawValue: Config.load(from: store.root).shelfEdge ?? "") ?? .bottom
+        let currentEdge = ShelfEdge(rawValue: config.shelfEdge ?? "") ?? .bottom
         for edge in ShelfEdge.allCases {
             let item = NSMenuItem(title: edge.rawValue.capitalized,
                                   action: #selector(shelfEdgePicked(_:)), keyEquivalent: "")
@@ -478,7 +478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edgeItem.submenu = edgeMenu
         menu.addItem(edgeItem)
         let tuckItem = menuItem("Auto-tuck Idle Stickies", #selector(toggleAutoDock(_:)), "")
-        tuckItem.state = (Config.load(from: store.root).autoDockSeconds ?? 0) > 0 ? .on : .off
+        tuckItem.state = (config.autoDockSeconds ?? 0) > 0 ? .on : .off
         menu.addItem(tuckItem)
         let loginItem = menuItem("Start at Login", #selector(toggleLoginItem(_:)), "")
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
