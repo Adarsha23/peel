@@ -79,6 +79,81 @@ import Foundation
     }
 }
 
+@Suite struct WhenTests {
+    // Anchor: Monday Sep 14 2026, 12:00 local time.
+    let noon = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 14, hour: 12))!
+
+    func fire(_ line: String) -> When.Match? {
+        When.detect(in: line, now: noon)
+    }
+
+    @Test func relativePhrases() {
+        #expect(fire("in 20 min do the thing")?.date == noon.addingTimeInterval(20 * 60))
+        #expect(fire("in 2 hours")?.date == noon.addingTimeInterval(2 * 3600))
+        #expect(fire("in 3 days")?.date == noon.addingTimeInterval(3 * 86400))
+        #expect(fire("5m stretch")?.date == noon.addingTimeInterval(5 * 60))
+        #expect(fire("2h nap")?.date == noon.addingTimeInterval(2 * 3600))
+        #expect(fire("in 1 week")?.date == noon.addingTimeInterval(7 * 86400))
+        #expect(fire("in 20 min")?.repeats == When.Repeat.none)
+    }
+
+    @Test func recurringDaily() throws {
+        let match = try #require(fire("every day at 3pm water plants"))
+        #expect(match.repeats == .daily)
+        let c = Calendar.current.dateComponents([.day, .hour, .minute], from: match.date)
+        #expect(c.hour == 15 && c.minute == 0 && c.day == 14) // today, 3pm is still ahead of noon
+    }
+
+    @Test func recurringDailyRollsToTomorrow() throws {
+        let match = try #require(fire("every day at 9am standup"))
+        let c = Calendar.current.dateComponents([.day, .hour], from: match.date)
+        #expect(c.hour == 9 && c.day == 15) // 9am already passed at noon
+    }
+
+    @Test func recurringWeekday() throws {
+        let match = try #require(fire("every weekday 9am standup"))
+        #expect(match.repeats == .weekdays)
+        let c = Calendar.current.dateComponents([.weekday, .hour], from: match.date)
+        #expect(c.hour == 9)
+        #expect([2, 3, 4, 5, 6].contains(c.weekday!))
+    }
+
+    @Test func recurringWeekend() throws {
+        let match = try #require(fire("every weekend at 10am ride"))
+        #expect(match.repeats == .weekends)
+        let c = Calendar.current.dateComponents([.weekday, .hour], from: match.date)
+        #expect(c.hour == 10)
+        #expect([1, 7].contains(c.weekday!))
+    }
+
+    @Test func recurringNamedDay() throws {
+        let match = try #require(fire("every monday 9:30 review"))
+        #expect(match.repeats == .weekly(weekday: 2))
+        let c = Calendar.current.dateComponents([.weekday, .hour, .minute], from: match.date)
+        #expect(c.weekday == 2 && c.hour == 9 && c.minute == 30)
+    }
+
+    @Test func smallHoursWithoutAmPmMeanAfternoon() throws {
+        let match = try #require(fire("every day at 3 water plants"))
+        #expect(Calendar.current.component(.hour, from: match.date) == 15)
+        let nine = try #require(fire("every day at 9"))
+        #expect(Calendar.current.component(.hour, from: nine.date) == 9)
+    }
+
+    @Test func absoluteFallback() throws {
+        let match = try #require(fire("Sep 20, 2:30 PM check the oven"))
+        #expect(match.repeats == When.Repeat.none)
+        let c = Calendar.current.dateComponents([.month, .day, .hour, .minute], from: match.date)
+        #expect(c.month == 9 && c.day == 20 && c.hour == 14 && c.minute == 30)
+    }
+
+    @Test func garbageParsesToNothing() {
+        #expect(fire("someday maybe") == nil)
+        #expect(fire("every blue moon") == nil)
+        #expect(fire("") == nil)
+    }
+}
+
 @Suite struct MarkupTests {
     @Test func displayMapping() {
         let md = "- [ ] task\n- [x] done\n- bullet\n* star bullet\nplain"

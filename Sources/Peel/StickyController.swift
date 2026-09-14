@@ -456,7 +456,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.textView.insertPlain("@remind \(args) ", at: nil)
-                if Reminders.detect(in: "@remind \(args)") != nil { self.playChimePreview() }
+                if When.detect(in: args) != nil { self.playChimePreview() }
             }
             return true
         }
@@ -577,20 +577,42 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     private func showRemindPicker(target: RemindTarget, anchor: NSRange? = nil) {
         remindTarget = target
         let menu = NSMenu()
-        for (label, date) in Self.remindOptions() {
-            let item = NSMenuItem(title: "\(label)   \(Self.remindInsert(date))",
+        for phrase in Self.remindPhrases {
+            if phrase.isEmpty {
+                menu.addItem(.separator())
+                continue
+            }
+            let item = NSMenuItem(title: "\(phrase)   \(Self.preview(of: phrase))",
                                   action: #selector(remindOptionPicked(_:)), keyEquivalent: "")
             item.target = self
-            item.representedObject = date
+            item.representedObject = phrase
             menu.addItem(item)
         }
         menu.addItem(.separator())
-        let hint = NSMenuItem(title: "or type your own:  @remind tomorrow 9am call bank",
+        let hint = NSMenuItem(title: "or type your own: in 45 min · every friday 4pm · Sep 20 2:30pm",
                               action: nil, keyEquivalent: "")
         hint.isEnabled = false
         menu.addItem(hint)
 
         popup(menu, atCharacter: (anchor ?? textView.selectedRange()).location)
+    }
+
+    /// The menu inserts these exact phrases, so the free-text grammar teaches
+    /// itself. Empty string = separator.
+    private static let remindPhrases: [String] = [
+        "in 5 min", "in 30 min", "in 2 hours",
+        "", // one-shots above, absolutes below
+        "tomorrow 9am", "tonight 8pm",
+        "", // recurring
+        "every day at 9am", "every weekday at 9:30am", "every weekend at 10am",
+    ]
+
+    private static func preview(of phrase: String) -> String {
+        guard let match = When.detect(in: phrase) else { return "" }
+        if let label = match.repeats.label { return "repeats \(label)" }
+        let f = DateFormatter()
+        f.dateFormat = "EEE h:mm a"
+        return f.string(from: match.date)
     }
 
     private func popup(_ menu: NSMenu, atCharacter location: Int) {
@@ -676,26 +698,25 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     }
 
     @objc private func remindOptionPicked(_ sender: NSMenuItem) {
-        guard let date = sender.representedObject as? Date else { return }
-        let formatted = Self.remindInsert(date)
+        guard let phrase = sender.representedObject as? String else { return }
         panel.makeKey()
         panel.makeFirstResponder(textView)
         switch remindTarget {
         case .newLine:
             // Template with the message pre-selected — typing replaces it, so the
             // line itself shows where the reminder text goes.
-            let prefix = "@remind \(formatted) - "
+            let prefix = "@remind \(phrase) - "
             let hint = "what to remember"
             let start = textView.selectedRange().location
             textView.insertPlain(prefix + hint, at: nil)
             textView.setSelectedRange(NSRange(location: start + (prefix as NSString).length,
                                               length: (hint as NSString).length))
         case .replaceDate(let range):
-            textView.replaceRange(range, with: formatted)
-            textView.setSelectedRange(NSRange(location: range.location + (formatted as NSString).length,
+            textView.replaceRange(range, with: phrase)
+            textView.setSelectedRange(NSRange(location: range.location + (phrase as NSString).length,
                                               length: 0))
         case .insertAfterToken(let token):
-            textView.insertPlain(" \(formatted)", at: token.upperBound)
+            textView.insertPlain(" \(phrase)", at: token.upperBound)
         }
         textView.scrollRangeToVisible(textView.selectedRange())
         playChimePreview()
@@ -707,44 +728,6 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
               let sound = NSSound(contentsOf: url, byReference: true) else { return }
         sound.volume = 0.45
         sound.play()
-    }
-
-    /// The menu shows exactly the text that will be inserted, so the free-form
-    /// format teaches itself.
-    private static func remindOptions() -> [(String, Date)] {
-        let calendar = Calendar.current
-        let now = Date()
-        func rounded(_ interval: TimeInterval) -> Date {
-            let date = now.addingTimeInterval(interval)
-            let step: TimeInterval = 300
-            return Date(timeIntervalSinceReferenceDate:
-                (date.timeIntervalSinceReferenceDate / step).rounded(.up) * step)
-        }
-        var options: [(String, Date)] = [
-            ("In 30 minutes", rounded(30 * 60)),
-            ("In 1 hour", rounded(60 * 60)),
-            ("In 3 hours", rounded(3 * 60 * 60)),
-        ]
-        if let tonight = calendar.date(bySettingHour: 20, minute: 0, second: 0, of: now), tonight > now {
-            options.append(("Tonight", tonight))
-        }
-        let tomorrow = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))!
-        options.append(("Tomorrow morning", calendar.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow)!))
-        options.append(("Tomorrow evening", calendar.date(bySettingHour: 18, minute: 0, second: 0, of: tomorrow)!))
-        if let monday = calendar.nextDate(after: now, matching: DateComponents(hour: 9, weekday: 2),
-                                          matchingPolicy: .nextTime) {
-            options.append(("Monday morning", monday))
-        }
-        return options
-    }
-
-    private static func remindInsert(_ date: Date) -> String {
-        let calendar = Calendar.current
-        let format = calendar.isDate(date, equalTo: Date(), toGranularity: .year)
-            ? "MMM d, h:mm a" : "MMM d yyyy, h:mm a"
-        let f = DateFormatter()
-        f.dateFormat = format
-        return f.string(from: date)
     }
 
     private func nextIndexedName(prefix: String) -> String {
