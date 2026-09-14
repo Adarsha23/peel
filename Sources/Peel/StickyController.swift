@@ -968,6 +968,7 @@ final class HeaderView: NSView {
 
     private var dragStartMouse: NSPoint?
     private var dragStartOrigin: NSPoint?
+    private var lastDragMouse: NSPoint?
     var dotColor: NSColor = .controlAccentColor { didSet { dotButton.image = dotImage() } }
 
     private let hideButton = HeaderView.symbolButton("xmark", size: 9)
@@ -1053,13 +1054,33 @@ final class HeaderView: NSView {
         let mouse = NSEvent.mouseLocation
         var origin = NSPoint(x: startOrigin.x + (mouse.x - startMouse.x),
                              y: startOrigin.y + (mouse.y - startMouse.y))
-        origin = onSnap?(origin, window.frame.size) ?? origin
+        // Magnetize only while placing deliberately — snapping mid-flight
+        // yanks the window around and reads as a bug, not a feature.
+        let speed = lastDragMouse.map { hypot(mouse.x - $0.x, mouse.y - $0.y) } ?? 0
+        lastDragMouse = mouse
+        if speed < 6, let snapped = onSnap?(origin, window.frame.size) {
+            origin = snapped
+        }
         window.setFrameOrigin(origin)
     }
 
     override func mouseUp(with event: NSEvent) {
-        dragStartMouse = nil
-        dragStartOrigin = nil
+        defer {
+            dragStartMouse = nil
+            dragStartOrigin = nil
+            lastDragMouse = nil
+        }
+        guard dragStartMouse != nil, let window else { return }
+        // Settle into alignment with a soft slide instead of a teleport.
+        let snapped = onSnap?(window.frame.origin, window.frame.size) ?? window.frame.origin
+        guard snapped != window.frame.origin else { return }
+        var frame = window.frame
+        frame.origin = snapped
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.14
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            window.animator().setFrame(frame, display: true)
+        }
     }
 
     override func updateTrackingAreas() {

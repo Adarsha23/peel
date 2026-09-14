@@ -1,16 +1,16 @@
 import AppKit
 
-/// Peel's own reminder alarm: a floating card that uses the same panel tech as
-/// the stickies — so unlike system banners it provably shows over fullscreen
-/// apps, and it stays until acted on. Chime included.
+/// Peel's reminder alarm: a floating card in the note's own paper color — the
+/// same panel tech as the stickies, so it provably shows over fullscreen apps,
+/// and it stays until acted on. Click the card to open the note.
 final class ReminderAlert {
     private var panel: FloatPanel?
     private var noteID = ""
+    private var text = ""
     private var openHandler: ((String) -> Void)?
     private var snoozeHandler: ((String, String) -> Void)?
-    private var text = ""
 
-    func show(noteID: String, text: String, title: String,
+    func show(noteID: String, text: String, title: String, palette: Theme.Palette,
               onOpen: @escaping (String) -> Void,
               onSnooze: @escaping (String, String) -> Void) {
         self.noteID = noteID
@@ -19,57 +19,89 @@ final class ReminderAlert {
         self.snoozeHandler = onSnooze
         dismiss()
 
-        let panel = FloatPanel(frame: NSRect(x: 0, y: 0, width: 360, height: 96), resizable: false)
+        let width: CGFloat = 384
+        let height: CGFloat = 116
+        let panel = FloatPanel(frame: NSRect(x: 0, y: 0, width: width, height: height),
+                               resizable: false)
         panel.level = .statusBar // above the stickies
 
         let effect = NSVisualEffectView()
         effect.material = .popover
         effect.blendingMode = .behindWindow
         effect.state = .active
-        effect.maskImage = Theme.roundedMask(radius: 14)
+        effect.maskImage = Theme.roundedMask(radius: 16)
 
-        let icon = NSTextField(labelWithString: "⏰")
-        icon.font = .systemFont(ofSize: 24)
+        let card = CardView()
+        card.onClick = { [weak self] in self?.openPressed() }
+        card.color = palette.background
+        card.translatesAutoresizingMaskIntoConstraints = false
+
+        // slim accent spine — the "this is a Peel note" signature
+        let spine = NSView()
+        spine.wantsLayer = true
+        spine.layer?.cornerRadius = 2
+
+        let dotLayerColor = palette.accent
+        spine.layer?.backgroundColor = dotLayerColor.cgColor
+
         let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = Theme.rounded(13, weight: .semibold)
+        titleLabel.font = Theme.rounded(13.5, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
-        let bodyLabel = NSTextField(labelWithString: text)
-        bodyLabel.font = Theme.rounded(12)
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "h:mm a"
+        let timeLabel = NSTextField(labelWithString: timeFormatter.string(from: Date()))
+        timeLabel.font = Theme.rounded(11)
+        timeLabel.textColor = .tertiaryLabelColor
+
+        let bodyLabel = NSTextField(wrappingLabelWithString: text)
+        bodyLabel.font = Theme.rounded(13)
         bodyLabel.textColor = .secondaryLabelColor
-        bodyLabel.lineBreakMode = .byTruncatingTail
         bodyLabel.maximumNumberOfLines = 2
+        bodyLabel.lineBreakMode = .byTruncatingTail
 
-        let openButton = NSButton(title: "Open Note", target: self, action: #selector(openPressed))
-        openButton.bezelStyle = .rounded
-        openButton.controlSize = .small
-        openButton.keyEquivalent = "\r"
-        let snoozeButton = NSButton(title: "+10 min", target: self, action: #selector(snoozePressed))
-        snoozeButton.bezelStyle = .rounded
-        snoozeButton.controlSize = .small
-        let doneButton = NSButton(title: "Done", target: self, action: #selector(dismissPressed))
-        doneButton.bezelStyle = .rounded
-        doneButton.controlSize = .small
+        let open = textButton("Open Note", color: palette.accent, weight: .semibold,
+                              action: #selector(openPressed))
+        let snooze = textButton("Snooze 10 min", color: .secondaryLabelColor, weight: .medium,
+                                action: #selector(snoozePressed))
+        let done = textButton("Done", color: .secondaryLabelColor, weight: .medium,
+                              action: #selector(dismissPressed))
 
-        for view in [icon, titleLabel, bodyLabel, openButton, snoozeButton, doneButton] {
+        effect.addSubview(card)
+        for view in [spine, titleLabel, timeLabel, bodyLabel, open, snooze, done] {
             view.translatesAutoresizingMaskIntoConstraints = false
             effect.addSubview(view)
         }
         panel.contentView = effect
+
         NSLayoutConstraint.activate([
-            icon.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 16),
-            icon.topAnchor.constraint(equalTo: effect.topAnchor, constant: 14),
-            titleLabel.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 12),
-            titleLabel.topAnchor.constraint(equalTo: effect.topAnchor, constant: 12),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: effect.trailingAnchor, constant: -14),
+            card.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
+            card.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
+            card.topAnchor.constraint(equalTo: effect.topAnchor),
+            card.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
+
+            spine.leadingAnchor.constraint(equalTo: effect.leadingAnchor, constant: 14),
+            spine.topAnchor.constraint(equalTo: effect.topAnchor, constant: 16),
+            spine.bottomAnchor.constraint(equalTo: effect.bottomAnchor, constant: -16),
+            spine.widthAnchor.constraint(equalToConstant: 4),
+
+            titleLabel.leadingAnchor.constraint(equalTo: spine.trailingAnchor, constant: 14),
+            titleLabel.topAnchor.constraint(equalTo: effect.topAnchor, constant: 15),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: timeLabel.leadingAnchor, constant: -10),
+
+            timeLabel.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -16),
+            timeLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+
             bodyLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            bodyLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 1),
-            bodyLabel.trailingAnchor.constraint(lessThanOrEqualTo: effect.trailingAnchor, constant: -14),
-            openButton.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
-            openButton.bottomAnchor.constraint(equalTo: effect.bottomAnchor, constant: -10),
-            snoozeButton.leadingAnchor.constraint(equalTo: openButton.trailingAnchor, constant: 8),
-            snoozeButton.centerYAnchor.constraint(equalTo: openButton.centerYAnchor),
-            doneButton.leadingAnchor.constraint(equalTo: snoozeButton.trailingAnchor, constant: 8),
-            doneButton.centerYAnchor.constraint(equalTo: openButton.centerYAnchor),
+            bodyLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 3),
+            bodyLabel.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -16),
+
+            open.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            open.bottomAnchor.constraint(equalTo: effect.bottomAnchor, constant: -13),
+            snooze.leadingAnchor.constraint(equalTo: open.trailingAnchor, constant: 18),
+            snooze.centerYAnchor.constraint(equalTo: open.centerYAnchor),
+            done.leadingAnchor.constraint(equalTo: snooze.trailingAnchor, constant: 18),
+            done.centerYAnchor.constraint(equalTo: open.centerYAnchor),
         ])
 
         let screen = NSScreen.screens.first {
@@ -80,12 +112,12 @@ final class ReminderAlert {
         frame.origin = NSPoint(x: visible.maxX - frame.width - 16,
                                y: visible.maxY - frame.height - 16)
         var start = frame
-        start.origin.y += 24
+        start.origin.y += 26
         panel.setFrame(start, display: false)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.22
+            context.duration = 0.24
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
             panel.animator().setFrame(frame, display: true)
@@ -98,6 +130,18 @@ final class ReminderAlert {
         }
         // No auto-dismiss: a reminder that fires while you're away (screensaver,
         // lunch) must still be waiting when you come back. Done/snooze clears it.
+    }
+
+    private func textButton(_ title: String, color: NSColor, weight: NSFont.Weight,
+                            action: Selector) -> NSButton {
+        let button = NSButton(title: "", target: self, action: action)
+        button.isBordered = false
+        button.attributedTitle = NSAttributedString(string: title, attributes: [
+            .font: Theme.rounded(12.5, weight: weight),
+            .foregroundColor: color,
+        ])
+        button.setButtonType(.momentaryPushIn)
+        return button
     }
 
     @objc private func openPressed() {
@@ -118,11 +162,41 @@ final class ReminderAlert {
     func dismiss() {
         guard let panel else { return }
         self.panel = nil
+        var target = panel.frame
+        target.origin.y += 18
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.15
+            context.duration = 0.16
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
+            panel.animator().setFrame(target, display: true)
         }, completionHandler: {
             panel.orderOut(nil)
         })
+    }
+}
+
+/// The note-colored paper of the card; clicking anywhere opens the note.
+private final class CardView: NSView {
+    var onClick: (() -> Void)?
+    var color: NSColor = .clear { didSet { needsDisplay = true } }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius = 16
+        layer?.borderWidth = 0.5
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func updateLayer() {
+        layer?.backgroundColor = color.withAlphaComponent(0.92).cgColor
+        layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.1).cgColor
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?()
     }
 }

@@ -18,7 +18,7 @@ struct Config: Codable {
         // newNote/search stay local-only (⌃⌥N / ⌃⌥F inside a sticky) unless the
         // user opts into global specs here, e.g. "ctrl+opt+n".
         let config = Config(toggleHotkey: "cmd+shift+space", newNoteHotkey: nil,
-                            searchHotkey: nil, clipHotkey: "ctrl+opt+v", autoDockSeconds: 10)
+                            searchHotkey: nil, clipHotkey: "ctrl+opt+v", autoDockSeconds: 0)
         config.save(to: root)
         return config
     }
@@ -101,9 +101,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         reminders.reveal = { [weak self] id in self?.reveal(id: id, focus: true) }
         reminders.onFire = { [weak self] noteID, text in
             guard let self else { return }
-            let title = self.store.load(id: noteID)?.title ?? "Reminder"
+            let note = self.store.load(id: noteID)
+            var title = note?.title ?? "Reminder"
+            if title.hasPrefix("@remind") { title = "Reminder" } // avoid echoing the raw line
             self.reminderAlert.show(
                 noteID: noteID, text: text, title: title,
+                palette: Theme.palette(note?.color ?? "yellow"),
                 onOpen: { [weak self] id in self?.reveal(id: id, focus: true) },
                 onSnooze: { [weak self] id, body in
                     self?.reminders.snooze(noteID: id, text: body, minutes: 10)
@@ -176,11 +179,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.show(focus: focus, from: origin)
     }
 
-    /// The idle life-cycle: untouched stickies go translucent after a few
-    /// seconds (content underneath shows through), then tuck into the shelf.
+    /// The idle life-cycle: untouched stickies go translucent so the content
+    /// underneath shows through — they stay put. Auto-tucking into the shelf
+    /// is opt-in (menu bar / autoDockSeconds), since ghosting already frees
+    /// the screen.
     private func idleSweep() {
         let mouse = NSEvent.mouseLocation
-        let dockAfter = config.autoDockSeconds ?? 10
+        let dockAfter = config.autoDockSeconds ?? 0
         for controller in controllers.values {
             guard controller.panel.isVisible,
                   !controller.panel.isKeyWindow,
@@ -201,10 +206,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleAutoDock(_ sender: NSMenuItem) {
-        let current = config.autoDockSeconds ?? 10
+        let current = config.autoDockSeconds ?? 0
         config.autoDockSeconds = current > 0 ? 0 : 10
         config.save(to: store.root)
-        sender.state = (config.autoDockSeconds ?? 10) > 0 ? .on : .off
+        sender.state = (config.autoDockSeconds ?? 0) > 0 ? .on : .off
     }
 
     @objc private func newStickyFromMenu() { newSticky() }
@@ -447,7 +452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(menuItem("Keyboard Shortcuts", #selector(showHelp), ""))
         menu.addItem(.separator())
         let tuckItem = menuItem("Auto-tuck Idle Stickies", #selector(toggleAutoDock(_:)), "")
-        tuckItem.state = (Config.load(from: store.root).autoDockSeconds ?? 10) > 0 ? .on : .off
+        tuckItem.state = (Config.load(from: store.root).autoDockSeconds ?? 0) > 0 ? .on : .off
         menu.addItem(tuckItem)
         let loginItem = menuItem("Start at Login", #selector(toggleLoginItem(_:)), "")
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
