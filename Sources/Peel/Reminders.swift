@@ -61,15 +61,19 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// Native alarm: fired by the running app itself — a floating Peel card +
+    /// chime, independent of the macOS notification pipeline. (noteID, text)
+    var onFire: ((String, String) -> Void)?
+
+    private var timers: [String: Timer] = [:]
+
     func sync(note: Note) {
-        guard Reminders.isAvailable else { return }
-        refreshAuthorizationStatus() // keep the editor's denied-warning current
         var wanted: [String: (Date, String)] = [:]
         for line in note.body.components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard trimmed.hasPrefix("@remind") else { continue }
             guard let (date, dateRange) = Reminders.detect(in: trimmed) else { continue }
-            // Notification body = the line minus the @remind token and the date phrase.
+            // Reminder text = the line minus the @remind token and the date phrase.
             var text = (trimmed as NSString).replacingCharacters(in: dateRange, with: " ")
             text = text.replacingOccurrences(of: "@remind", with: "")
                 .trimmingCharacters(in: CharacterSet.whitespaces.union(.init(charactersIn: "—–-:,")))
@@ -77,6 +81,25 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
             wanted["peel.\(note.id).\(stableHash(trimmed))"] = (date, text)
         }
 
+        // The primary path: in-app timers. Works regardless of notification
+        // permission, alert styles, Focus modes, or signing identity.
+        let prefix = "peel.\(note.id)."
+        for (id, timer) in timers where id.hasPrefix(prefix) && wanted[id] == nil {
+            timer.invalidate()
+            timers[id] = nil
+        }
+        for (id, (date, text)) in wanted where timers[id] == nil {
+            let noteID = note.id
+            let timer = Timer(fire: date, interval: 0, repeats: false) { [weak self] _ in
+                self?.fire(id: id, noteID: noteID, text: text)
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            timers[id] = timer
+        }
+
+        // Secondary: system notifications, so reminders survive the app being quit.
+        guard Reminders.isAvailable else { return }
+        refreshAuthorizationStatus() // keep the editor's denied-warning current
         let center = UNUserNotificationCenter.current()
         let previous = scheduled[note.id] ?? []
         let stale = previous.subtracting(wanted.keys)
@@ -98,11 +121,36 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    private func fire(id: String, noteID: String, text: String) {
+        timers[id] = nil
+        if Reminders.isAvailable {
+            // the app is alive and presenting this itself — no system double
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
+        }
+        onFire?(noteID, text)
+    }
+
+    /// Snooze: re-fire the same reminder a few minutes from now (app-side only).
+    func snooze(noteID: String, text: String, minutes: Double) {
+        let id = "peel.\(noteID).snooze.\(stableHash(text))"
+        timers[id]?.invalidate()
+        let timer = Timer(fire: Date().addingTimeInterval(minutes * 60), interval: 0, repeats: false) {
+            [weak self] _ in
+            self?.fire(id: id, noteID: noteID, text: text)
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        timers[id] = timer
+    }
+
     /// Cancel everything scheduled for a note (it was archived or deleted).
     func cancelAll(for noteID: String) {
+        let prefix = "peel.\(noteID)."
+        for (id, timer) in timers where id.hasPrefix(prefix) {
+            timer.invalidate()
+            timers[id] = nil
+        }
         guard Reminders.isAvailable else { return }
         let center = UNUserNotificationCenter.current()
-        let prefix = "peel.\(noteID)."
         scheduled[noteID] = nil
         center.getPendingNotificationRequests { requests in
             let stale = requests.map(\.identifier).filter { $0.hasPrefix(prefix) }

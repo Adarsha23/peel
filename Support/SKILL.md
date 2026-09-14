@@ -50,7 +50,8 @@ contents without opening images.
 ## Body conventions
 
 - `- [ ] task` / `- [x] done` — todo state lives in the markdown; editing it updates the sticky
-- `@remind <natural time> <message>` — schedules a macOS notification when the app saves the note
+- `@remind <natural time> <message>` — the running app fires a floating reminder card + chime at that time (plus a system notification as fallback)
+- `[[note title]]` — link to another note, resolved against first lines (titles); creating these in a note is a good way to cross-reference for the user
 
 ## Writing back (the running app live-reloads files within ~2s)
 

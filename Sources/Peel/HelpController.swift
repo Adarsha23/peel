@@ -111,14 +111,18 @@ final class HelpController: NSObject, NSWindowDelegate {
         row("⌘B  ⌘I  ⌘E", "**bold** · *italic* · `code` — toggles the selection")
         row("⌘⇧X  ⌘⇧H", "~~strikethrough~~ · ==highlight==")
         row("#  ##", "headings")
+        row("⌘+  ⌘−  ⌘0", "per-sticky text zoom · reset")
 
         section("TYPING")
         row("/", "on an empty line: command menu — type to filter, click to apply")
         row("[] + space", "todo")
         row("- + space", "bullet")
         row("``` … ```", "code block")
-        row("@remind", "click it to pick a time · orange = scheduled, red = check tooltip")
+        row("@remind", "click to pick a time · fires a Peel card + chime that waits for you")
+        row("240*1.18=", "typing = after math inserts the result")
+        row("[[note title]]", "link to another sticky — click to jump, [[ offers titles")
         row("⟦image-1.png⟧", "click to view · drop/paste to add · text inside is searchable")
+        row("drag a sticky", "edges magnetize to other stickies and the screen")
 
         section("SLASH — TYPE ON ITS OWN LINE + RETURN")
         row("/help", "this cheatsheet")
@@ -128,6 +132,7 @@ final class HelpController: NSObject, NSWindowDelegate {
         row("/remind", "pick a time — or write it: /remind in 20 min pay rent")
         row("/date  /time", "insert date · time")
         row("/copy  /open", "copy note as markdown · show in Finder")
+        row("/count /trim", "stats · tidy whitespace (also /lower /upper)")
         row("/yellow …", "any color: cream blue green lavender pink graphite")
 
         section("TERMINAL")

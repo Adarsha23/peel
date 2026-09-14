@@ -12,6 +12,12 @@ protocol NoteTextViewDelegate: AnyObject {
     func noteRemindClicked(tokenRange: NSRange, dateRange: NSRange?)
     /// "/" typed on an empty line — show the command menu.
     func noteSlashTyped(slashAt location: Int)
+    /// Click on a [[wiki link]] — jump to (or create) that note.
+    func noteOpenWiki(_ title: String)
+    /// "[[" just typed — offer note titles to complete.
+    func noteWikiTyped(at location: Int)
+    /// Does a note with this title exist? (drives link styling)
+    func noteWikiExists(_ title: String) -> Bool
 }
 
 /// A plain-text-first editor with live glyph styling:
@@ -38,6 +44,17 @@ final class NoteTextView: NSTextView {
     var attachmentsDir: URL?
     private var tokenLinks: [(range: NSRange, url: URL)] = []
     private var remindTokens: [(token: NSRange, dateRange: NSRange?)] = []
+    private var wikiLinks: [(range: NSRange, title: String)] = []
+
+    /// Per-sticky zoom (⌘+ / ⌘−); all derived fonts scale from this.
+    var baseFontSize: CGFloat = 13 {
+        didSet { restyle() }
+    }
+
+    private var bodyFont: NSFont { Theme.rounded(baseFontSize) }
+    private var boldFont: NSFont { Theme.rounded(baseFontSize, weight: .semibold) }
+    private var headingFont: NSFont { Theme.rounded(baseFontSize + 2, weight: .semibold) }
+    private var monoFont: NSFont { NSFont.monospacedSystemFont(ofSize: baseFontSize - 1, weight: .regular) }
 
     private static let linkDetector = try? NSDataDetector(
         types: NSTextCheckingResult.CheckingType.link.rawValue)
@@ -51,6 +68,7 @@ final class NoteTextView: NSTextView {
     private static let codeSpanRegex = try! NSRegularExpression(pattern: "`([^`\\n]+)`")
     private static let strikeRegex = try! NSRegularExpression(pattern: "~~([^~\\n]+)~~")
     private static let highlightRegex = try! NSRegularExpression(pattern: "==([^=\\n]+)==")
+    private static let wikiRegex = try! NSRegularExpression(pattern: "\\[\\[([^\\]\\n]+)\\]\\]")
 
     func configure() {
         isRichText = true
@@ -76,7 +94,7 @@ final class NoteTextView: NSTextView {
 
     private var baseAttributes: [NSAttributedString.Key: Any] {
         [
-            .font: Theme.bodyFont,
+            .font: bodyFont,
             .foregroundColor: NSColor.labelColor,
             .paragraphStyle: NoteTextView.bodyParagraph,
         ]
@@ -122,17 +140,17 @@ final class NoteTextView: NSTextView {
             defer { lineStart = lineEnd }
 
             if trimmed.hasPrefix("```") {
-                storage.addAttribute(.font, value: Theme.monoFont, range: lineRange)
+                storage.addAttribute(.font, value: monoFont, range: lineRange)
                 storage.addAttribute(.foregroundColor, value: NSColor.tertiaryLabelColor, range: lineRange)
                 inFence.toggle()
                 continue
             }
             if inFence {
-                storage.addAttribute(.font, value: Theme.monoFont, range: lineRange)
+                storage.addAttribute(.font, value: monoFont, range: lineRange)
                 continue
             }
             if trimmed.hasPrefix("# ") || trimmed.hasPrefix("## ") {
-                storage.addAttribute(.font, value: Theme.headingFont, range: lineRange)
+                storage.addAttribute(.font, value: headingFont, range: lineRange)
                 seenTitleLine = true
                 continue
             }
@@ -141,7 +159,7 @@ final class NoteTextView: NSTextView {
             if !seenTitleLine, !trimmed.isEmpty {
                 seenTitleLine = true
                 if !trimmed.hasPrefix("![") {
-                    storage.addAttribute(.font, value: Theme.boldFont, range: lineRange)
+                    storage.addAttribute(.font, value: boldFont, range: lineRange)
                 }
             }
             styleInline(storage, in: lineRange)
@@ -226,7 +244,7 @@ final class NoteTextView: NSTextView {
                 let name = ns.substring(with: match.range(at: 1))
                 let url = dir.appendingPathComponent(name)
                 let exists = FileManager.default.fileExists(atPath: url.path)
-                storage.addAttribute(.font, value: Theme.rounded(12, weight: .medium), range: match.range)
+                storage.addAttribute(.font, value: Theme.rounded(baseFontSize - 1, weight: .medium), range: match.range)
                 storage.addAttribute(.backgroundColor,
                                      value: accent.withAlphaComponent(0.13), range: match.range)
                 storage.addAttribute(.foregroundColor,
@@ -237,6 +255,23 @@ final class NoteTextView: NSTextView {
                     tokenLinks.append((match.range, url))
                 }
             }
+        }
+
+        // [[wiki links]] — pill if the target note exists, dimmed if not (yet)
+        wikiLinks = []
+        NoteTextView.wikiRegex.enumerateMatches(in: string, range: full) { match, _, _ in
+            guard let match else { return }
+            let title = ns.substring(with: match.range(at: 1))
+            let exists = noteDelegate?.noteWikiExists(title) ?? false
+            storage.addAttribute(.font, value: Theme.rounded(baseFontSize - 1, weight: .medium),
+                                 range: match.range)
+            storage.addAttribute(.backgroundColor, value: accent.withAlphaComponent(0.13),
+                                 range: match.range)
+            storage.addAttribute(.foregroundColor,
+                                 value: exists ? accent : NSColor.tertiaryLabelColor,
+                                 range: match.range)
+            storage.addAttribute(.cursor, value: NSCursor.pointingHand, range: match.range)
+            wikiLinks.append((match.range, title))
         }
         storage.endEditing()
         typingAttributes = baseAttributes
@@ -257,7 +292,7 @@ final class NoteTextView: NSTextView {
             }
         }
         apply(NoteTextView.boldRegex, markerLength: 2) {
-            storage.addAttribute(.font, value: Theme.boldFont, range: $0)
+            storage.addAttribute(.font, value: boldFont, range: $0)
         }
         // .obliqueness instead of an italic font: SF Rounded has no italic face.
         apply(NoteTextView.italicRegex, markerLength: 1) {
@@ -273,7 +308,7 @@ final class NoteTextView: NSTextView {
             storage.addAttribute(.backgroundColor, value: accent.withAlphaComponent(0.28), range: $0)
         }
         apply(NoteTextView.codeSpanRegex, markerLength: 1) {
-            storage.addAttribute(.font, value: Theme.monoFont, range: $0)
+            storage.addAttribute(.font, value: monoFont, range: $0)
             storage.addAttribute(.backgroundColor,
                                  value: NSColor.labelColor.withAlphaComponent(0.06), range: $0)
         }
@@ -344,6 +379,42 @@ final class NoteTextView: NSTextView {
         needsDisplay = true
         noteDelegate?.noteTextDidChange()
         maybeAnnounceSlash()
+        maybeAnnounceWiki()
+        maybeEvaluateMath()
+    }
+
+    /// "240*1.18=" — the result appears right after the equals sign.
+    private func maybeEvaluateMath() {
+        let selection = selectedRange()
+        guard selection.length == 0, selection.location > 1 else { return }
+        let ns = string as NSString
+        guard ns.character(at: selection.location - 1) == 0x3D /* = */ else { return }
+        var lineStart = 0
+        ns.getLineStart(&lineStart, end: nil, contentsEnd: nil,
+                        for: NSRange(location: selection.location, length: 0))
+        let allowed = Set("0123456789.,+-*/×÷() ")
+        var start = selection.location - 1
+        while start > lineStart, allowed.contains(Character(UnicodeScalar(ns.character(at: start - 1)) ?? " ")) {
+            start -= 1
+        }
+        let expression = ns.substring(with: NSRange(location: start, length: selection.location - 1 - start))
+            .trimmingCharacters(in: .whitespaces)
+        guard expression.contains(where: \.isNumber),
+              expression.contains(where: { "+-*/×÷".contains($0) }),
+              let value = Calc.evaluate(expression) else { return }
+        insertPlain(Calc.format(value), at: selection.location)
+    }
+
+    /// "[[" typed — offer existing note titles.
+    private func maybeAnnounceWiki() {
+        let selection = selectedRange()
+        guard selection.length == 0, selection.location >= 2 else { return }
+        let ns = string as NSString
+        guard ns.character(at: selection.location - 1) == 0x5B,
+              ns.character(at: selection.location - 2) == 0x5B,
+              selection.location < 3 || ns.character(at: selection.location - 3) != 0x5B
+        else { return }
+        noteDelegate?.noteWikiTyped(at: selection.location)
     }
 
     /// ⌘⌫ repeatedly eats lines upward: at the start of a line it deletes the
@@ -505,6 +576,10 @@ final class NoteTextView: NSTextView {
             noteDelegate?.noteRemindClicked(tokenRange: token, dateRange: dateRange)
             return
         }
+        for (range, title) in wikiLinks where NSLocationInRange(index, range) {
+            noteDelegate?.noteOpenWiki(title)
+            return
+        }
         let ns = string as NSString
         for candidate in [index, index - 1] where candidate >= 0 && candidate < ns.length {
             let ch = ns.character(at: candidate)
@@ -576,7 +651,7 @@ final class NoteTextView: NSTextView {
         super.draw(dirtyRect)
         if string.isEmpty {
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: Theme.bodyFont,
+                .font: bodyFont,
                 .foregroundColor: NSColor.tertiaryLabelColor,
             ]
             let origin = NSPoint(x: textContainerInset.width + 5, y: textContainerInset.height)

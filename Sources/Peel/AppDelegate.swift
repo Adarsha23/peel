@@ -47,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var search = SearchController(app: self)
     private let help = HelpController()
     private lazy var shelf = ShelfController(app: self)
+    private let reminderAlert = ReminderAlert()
     private var colorRotation = 0
     private var gitTimer: Timer?
     private var idleTimer: Timer?
@@ -98,6 +99,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startWatcher()
         reminders.activate()
         reminders.reveal = { [weak self] id in self?.reveal(id: id, focus: true) }
+        reminders.onFire = { [weak self] noteID, text in
+            guard let self else { return }
+            let title = self.store.load(id: noteID)?.title ?? "Reminder"
+            self.reminderAlert.show(
+                noteID: noteID, text: text, title: title,
+                onOpen: { [weak self] id in self?.reveal(id: id, focus: true) },
+                onSnooze: { [weak self] id, body in
+                    self?.reminders.snooze(noteID: id, text: body, minutes: 10)
+                })
+        }
 
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(remoteCommand(_:)),
@@ -196,9 +207,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sender.state = (config.autoDockSeconds ?? 10) > 0 ? .on : .off
     }
 
+    @objc private func newStickyFromMenu() { newSticky() }
+
     @discardableResult
-    @objc func newSticky() -> StickyController {
-        var note = Note(color: Theme.palettes[colorRotation % 6].name) // graphite stays opt-in
+    func newSticky() -> StickyController { newSticky(body: "") }
+
+    @discardableResult
+    func newSticky(body: String) -> StickyController {
+        var note = Note(color: Theme.palettes[colorRotation % 6].name, // graphite stays opt-in
+                        body: body)
         colorRotation += 1
         store.save(&note)
         let controller = StickyController(note: note, app: self)
@@ -291,6 +308,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controllers.removeValue(forKey: id)
     }
 
+    // MARK: Wiki links
+
+    func findNote(titled query: String) -> String? {
+        let q = query.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return nil }
+        let notes = store.loadAll()
+        return notes.first { $0.title.lowercased() == q }?.id
+            ?? notes.first { $0.title.lowercased().hasPrefix(q) }?.id
+            ?? notes.first { $0.title.lowercased().contains(q) }?.id
+            ?? notes.first { $0.id.hasPrefix(q) }?.id
+    }
+
+    func noteTitles() -> [(id: String, title: String)] {
+        store.loadAll().map { ($0.id, $0.title) }
+    }
+
+    /// Magnetize a dragged sticky to other stickies' edges and screen edges.
+    func snappedOrigin(_ origin: NSPoint, size: NSSize, excluding id: String?) -> NSPoint {
+        let threshold: CGFloat = 8
+        var xTargets: [CGFloat] = []
+        var yTargets: [CGFloat] = []
+        for controller in controllers.values
+        where controller.note.id != id && controller.panel.isVisible {
+            let f = controller.panel.frame
+            xTargets += [f.minX, f.maxX - size.width, f.maxX, f.minX - size.width]
+            yTargets += [f.minY, f.maxY - size.height, f.maxY, f.minY - size.height]
+        }
+        if let screen = NSScreen.screens.first(where: { NSPointInRect(origin, $0.frame) }) ?? NSScreen.main {
+            let v = screen.visibleFrame
+            xTargets += [v.minX, v.maxX - size.width]
+            yTargets += [v.minY, v.maxY - size.height]
+        }
+        var snapped = origin
+        if let x = xTargets.min(by: { abs($0 - origin.x) < abs($1 - origin.x) }),
+           abs(x - origin.x) <= threshold { snapped.x = x }
+        if let y = yTargets.min(by: { abs($0 - origin.y) < abs($1 - origin.y) }),
+           abs(y - origin.y) <= threshold { snapped.y = y }
+        return snapped
+    }
+
     func cascadeIndex() -> Int {
         controllers.values.filter { $0.panel.isVisible }.count
     }
@@ -375,7 +432,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.button?.image = NSImage(systemSymbolName: "note.text",
                                      accessibilityDescription: "Peel")
         let menu = NSMenu()
-        let newItem = menuItem("New Sticky", #selector(newSticky), "n")
+        let newItem = menuItem("New Sticky", #selector(newStickyFromMenu), "n")
         newItem.keyEquivalentModifierMask = [.control, .option]
         menu.addItem(newItem)
         let searchItem = menuItem("Search Notes…", #selector(showSearch), "f")

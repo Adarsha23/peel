@@ -55,11 +55,23 @@ Stickies" in the menu bar, or set `autoDockSeconds` in `config.json`
 (0 disables). Parked (⌃⌥B) stickies are exempt.
 
 **Formatting** is live markdown: `**bold**` (⌘B), `*italic*` (⌘I),
-`` `code` `` (⌘E), `~~strike~~` (⌘⇧X), `==highlight==` (⌘⇧H), `#` headings.
-The shortcuts toggle-wrap the selection or the word at the caret; markers stay
-visible but dimmed, and the file on disk is always plain markdown. The first
-line of every note renders as its header — it's the note's name on the shelf,
-in search, and in `peel list`.
+`` `code` `` (⌘E), `~~strike~~` (⌘⇧X), `==highlight==` (⌘⇧H), `#` headings,
+`⌘+`/`⌘−`/`⌘0` per-sticky text zoom. The shortcuts toggle-wrap the selection
+or the word at the caret; markers stay visible but dimmed, and the file on
+disk is always plain markdown. The first line of every note renders as its
+header — it's the note's name on the shelf, in search, and in `peel list`.
+
+**Inline math** — type `240*1.18=` and the result appears after the `=`.
+Supports `+ - * / ( )`, commas, `×`, `÷`.
+
+**Note links** — `[[marketing notes]]` becomes a clickable pill that jumps to
+the note whose first line matches; typing `[[` offers your note titles.
+Clicking a link to a note that doesn't exist creates it. On disk it's plain
+`[[…]]` text, Obsidian-style.
+
+**Snap-alignment** — dragged stickies magnetize to other stickies' edges and
+to screen edges (8 px threshold), so tiling notes side by side is effortless.
+Text utilities live in the slash menu: `/count`, `/lower`, `/upper`, `/trim`.
 
 **Typing** — `[]` + space starts a todo, `-` + space a bullet, Enter continues
 lists (Enter on an empty item ends the list), ``` fences render as code, URLs
@@ -89,9 +101,16 @@ to the strip; files over 100 MB are symlinked, not copied.
 **Reminders** — type `/remind` and pick a time from the menu ("In 30 minutes",
 "Tomorrow morning", …). It inserts `@remind Sep 15, 9:00 AM - what to remember`
 with the message part pre-selected — just type your reminder text over it.
-Everything on the line besides `@remind` and the time becomes the
-notification message. You can also write it all by hand:
-`@remind tomorrow 9am review the PR`.
+Everything on the line besides `@remind` and the time becomes the message. You
+can also write it all by hand: `@remind tomorrow 9am review the PR` or
+`/remind in 20 min pay rent`.
+
+At fire time the running app shows its **own floating reminder card** (chime,
+Open Note / +10 min snooze / Done) that works over fullscreen apps and **stays
+until you act on it** — a reminder that fires while you're at lunch is still
+waiting when you return. System notifications are only the fallback for when
+the app isn't running (that path needs notification permission; `peel doctor`
+diagnoses it).
 Feedback is live: the token turns **orange with the understood time
 underlined** when scheduled (hover for the exact date), **red** when no time
 was recognized — or when notifications can't be delivered (permission off,

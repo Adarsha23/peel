@@ -34,6 +34,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         placeOnScreenIfNeeded()
         applyPalette()
         textView.attachmentsDir = store.attachmentsDir(for: note.id)
+        textView.baseFontSize = CGFloat(note.fontSize)
         textView.string = Markup.display(fromMarkdown: note.body, noteID: note.id)
         textView.restyle()
         reloadAttachments()
@@ -58,6 +59,10 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         header.onNew = { [weak self] in self?.app.newSticky() }
         header.onMenu = { [weak self] button in self?.showContextMenu(from: button) }
         header.onCollapse = { [weak self] in self?.toggleCollapse() }
+        header.onSnap = { [weak self] origin, size in
+            guard let self else { return origin }
+            return self.app.snappedOrigin(origin, size: size, excluding: self.note.id)
+        }
 
         let scroll = NSScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
@@ -467,6 +472,37 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         case "archive", "done": run = { [weak self] in self?.archive() }
         case "shot", "screenshot": run = { [weak self] in self?.captureScreenshot() }
         case "todo": run = { [weak self] in self?.textView.toggleTodo(nil) }
+        case "count":
+            run = { [weak self] in
+                guard let self else { return }
+                let text = self.textView.string
+                let words = text.split { $0.isWhitespace || $0.isNewline }.count
+                let lines = text.components(separatedBy: "\n").filter { !$0.isEmpty }.count
+                let menu = NSMenu()
+                let item = NSMenuItem(title: "\(words) words · \(text.count) characters · \(lines) lines",
+                                      action: nil, keyEquivalent: "")
+                item.isEnabled = false
+                menu.addItem(item)
+                self.popup(menu, atCharacter: self.textView.selectedRange().location)
+            }
+        case "lower":
+            run = { [weak self] in self?.transformBody { $0.lowercased() } }
+        case "upper":
+            run = { [weak self] in self?.transformBody { $0.uppercased() } }
+        case "trim":
+            run = { [weak self] in
+                self?.transformBody { text in
+                    let trimmedLines = text.components(separatedBy: "\n")
+                        .map { line in
+                            var l = line
+                            while l.hasSuffix(" ") || l.hasSuffix("\t") { l.removeLast() }
+                            return l
+                        }
+                        .joined(separator: "\n")
+                    return trimmedLines.replacingOccurrences(of: "\n\n\n+", with: "\n\n",
+                                                             options: .regularExpression)
+                }
+            }
         case "code":
             run = { [weak self] in
                 guard let self else { return }
@@ -499,6 +535,11 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         }
         DispatchQueue.main.async(execute: run)
         return true
+    }
+
+    private func transformBody(_ transform: (String) -> String) {
+        let full = NSRange(location: 0, length: (textView.string as NSString).length)
+        textView.replaceRange(full, with: transform(textView.string))
     }
 
     private static let slashDate: DateFormatter = {
@@ -594,6 +635,10 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         menu.addItem(.separator())
         add("shot", "screenshot into the note")
         add("copy", "copy note as markdown")
+        add("count", "words · characters · lines")
+        add("lower", "lowercase the note")
+        add("upper", "uppercase the note")
+        add("trim", "strip trailing spaces, collapse blank runs")
         let colorItem = NSMenuItem(title: "color", action: nil, keyEquivalent: "")
         let colors = NSMenu()
         for palette in Theme.palettes {
@@ -762,6 +807,48 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         applyPalette()
     }
 
+    /// ⌘+ / ⌘− / ⌘0 — per-sticky text zoom, persisted in the frontmatter.
+    private func adjustFontSize(_ delta: Double = 0, reset: Bool = false) {
+        note.fontSize = reset ? 13 : min(24, max(9, note.fontSize + delta))
+        persist(touch: false)
+        textView.baseFontSize = CGFloat(note.fontSize)
+    }
+
+    // MARK: Wiki links
+
+    func noteWikiExists(_ title: String) -> Bool {
+        app.findNote(titled: title) != nil
+    }
+
+    func noteOpenWiki(_ title: String) {
+        if let id = app.findNote(titled: title) {
+            app.reveal(id: id, focus: true)
+        } else {
+            app.newSticky(body: title + "\n") // Obsidian-style: the link births the note
+        }
+    }
+
+    /// "[[": offer existing notes; picking one completes the link.
+    func noteWikiTyped(at location: Int) {
+        let titles = app.noteTitles().filter { $0.id != note.id }.prefix(15)
+        guard !titles.isEmpty else { return }
+        let menu = NSMenu()
+        for entry in titles {
+            let item = NSMenuItem(title: entry.title, action: #selector(wikiPicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = entry.title
+            menu.addItem(item)
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.popup(menu, atCharacter: max(0, location - 1))
+        }
+    }
+
+    @objc private func wikiPicked(_ sender: NSMenuItem) {
+        guard let title = sender.representedObject as? String else { return }
+        textView.insertPlain("\(title)]] ", at: nil)
+    }
+
     private func showContextMenu(from view: NSView) {
         let menu = NSMenu()
         for (index, palette) in Theme.palettes.enumerated() {
@@ -819,6 +906,9 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
             case "b": textView.toggleWrap("**"); return true
             case "i": textView.toggleWrap("*"); return true
             case "e": textView.toggleWrap("`"); return true
+            case "=", "+": adjustFontSize(+1); return true
+            case "-": adjustFontSize(-1); return true
+            case "0": adjustFontSize(reset: true); return true
             default: break
             }
         }
@@ -874,6 +964,10 @@ final class HeaderView: NSView {
     var onNew: (() -> Void)?
     var onMenu: ((NSView) -> Void)?
     var onCollapse: (() -> Void)?
+    var onSnap: ((NSPoint, NSSize) -> NSPoint)?
+
+    private var dragStartMouse: NSPoint?
+    private var dragStartOrigin: NSPoint?
     var dotColor: NSColor = .controlAccentColor { didSet { dotButton.image = dotImage() } }
 
     private let hideButton = HeaderView.symbolButton("xmark", size: 9)
@@ -941,12 +1035,31 @@ final class HeaderView: NSView {
     @objc private func newPressed() { onNew?() }
     @objc private func menuPressed() { onMenu?(dotButton) }
 
+    // Manual drag instead of performDrag so edges can magnetize to other
+    // stickies and screen edges while moving.
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 {
             onCollapse?()
             return
         }
-        window?.performDrag(with: event)
+        dragStartMouse = NSEvent.mouseLocation
+        dragStartOrigin = window?.frame.origin
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let startMouse = dragStartMouse,
+              let startOrigin = dragStartOrigin,
+              let window else { return }
+        let mouse = NSEvent.mouseLocation
+        var origin = NSPoint(x: startOrigin.x + (mouse.x - startMouse.x),
+                             y: startOrigin.y + (mouse.y - startMouse.y))
+        origin = onSnap?(origin, window.frame.size) ?? origin
+        window.setFrameOrigin(origin)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragStartMouse = nil
+        dragStartOrigin = nil
     }
 
     override func updateTrackingAreas() {

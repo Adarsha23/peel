@@ -13,8 +13,10 @@ public struct Note: Equatable {
     public var updated: Date
     /// Whether the sticky is currently shown on screen (survives restarts).
     public var open: Bool
-    /// Parked behind normal windows (⌘B) instead of floating above them.
+    /// Parked behind normal windows (⌃⌥B) instead of floating above them.
     public var sunk: Bool
+    /// Per-sticky text zoom (⌘+ / ⌘−).
+    public var fontSize: Double
     public var body: String
 
     public static let defaultWidth = 340.0
@@ -25,7 +27,8 @@ public struct Note: Equatable {
                 x: Double = 0, y: Double = 0,
                 width: Double = Note.defaultWidth, height: Double = Note.defaultHeight,
                 created: Date = Date(), updated: Date = Date(),
-                open: Bool = true, sunk: Bool = false, body: String = "") {
+                open: Bool = true, sunk: Bool = false, fontSize: Double = 13,
+                body: String = "") {
         self.id = id
         self.color = color
         self.x = x; self.y = y
@@ -33,6 +36,7 @@ public struct Note: Equatable {
         self.created = created; self.updated = updated
         self.open = open
         self.sunk = sunk
+        self.fontSize = fontSize
         self.body = body
     }
 
@@ -101,6 +105,7 @@ public extension Note {
             case "updated": note.updated = iso.date(from: value) ?? note.updated
             case "open": note.open = (value == "true")
             case "sunk": note.sunk = (value == "true")
+            case "fontSize": note.fontSize = Double(value) ?? 13
             default: break
             }
         }
@@ -123,6 +128,7 @@ public extension Note {
         updated: \(Note.iso.string(from: updated))
         open: \(open)
         sunk: \(sunk)
+        fontSize: \(Int(fontSize.rounded()))
         ---
 
         \(body)

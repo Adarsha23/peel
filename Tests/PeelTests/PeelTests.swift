@@ -8,7 +8,9 @@ import Foundation
                         body: "# Ideas\n\n- [ ] ship peel\n- [x] pick a name\n\nplain line")
         note.open = false
         note.sunk = true
+        note.fontSize = 16
         let parsed = Note.parse(fileContents: note.serialize(), fallbackID: "fallback")
+        #expect(parsed.fontSize == 16)
         #expect(parsed.id == note.id)
         #expect(parsed.color == "lavender")
         #expect(parsed.x == 120)
@@ -45,6 +47,35 @@ import Foundation
         let id = Note.makeID()
         #expect(id.count == 20) // yyyyMMdd-HHmmss-xxxx
         #expect(!id.contains(" "))
+    }
+}
+
+@Suite struct CalcTests {
+    @Test func arithmetic() {
+        #expect(Calc.evaluate("240*1.18") == 283.2)
+        #expect(Calc.evaluate("5*12") == 60)
+        #expect(Calc.evaluate("2*(3+4)") == 14)
+        #expect(Calc.evaluate("10/4") == 2.5)
+        #expect(Calc.evaluate("-5+3") == -2)
+        #expect(Calc.evaluate("1,000*2") == 2000)
+        #expect(Calc.evaluate("6×7") == 42)
+        #expect(Calc.evaluate("10÷4") == 2.5)
+    }
+
+    @Test func garbageIsRejectedNotCrashed() {
+        #expect(Calc.evaluate("10/0") == nil)
+        #expect(Calc.evaluate("abc") == nil)
+        #expect(Calc.evaluate("5*") == nil)
+        #expect(Calc.evaluate("(3+4") == nil)
+        #expect(Calc.evaluate("") == nil)
+        #expect(Calc.evaluate("5..2*3") == nil)
+    }
+
+    @Test func humanFormatting() {
+        #expect(Calc.format(60) == "60")
+        #expect(Calc.format(283.2) == "283.2")
+        #expect(Calc.format(2.5) == "2.5")
+        #expect(Calc.format(1.0 / 3.0) == "0.333333")
     }
 }
 
