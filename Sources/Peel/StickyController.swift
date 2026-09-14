@@ -320,9 +320,25 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
 
     /// Slash commands. Actions run async so the command line is erased first —
     /// archive/hide would otherwise persist the note with "/archive" still in it.
-    func noteCommand(_ command: String) -> Bool {
+    func noteCommand(_ raw: String) -> Bool {
+        let parts = raw.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+        guard let first = parts.first else { return false }
+        let verb = first.lowercased()
+        let args = parts.count > 1 ? String(parts[1]) : ""
+
+        // "/remind in 20 min pay rent" → "@remind in 20 min pay rent " with live feedback.
+        if verb == "remind" || verb == "reminder", !args.isEmpty {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.textView.insertPlain("@remind \(args) ", at: nil)
+                if Reminders.detect(in: "@remind \(args)") != nil { self.playChimePreview() }
+            }
+            return true
+        }
+        guard args.isEmpty else { return false } // only /remind takes arguments
+
         let run: () -> Void
-        switch command {
+        switch verb {
         case "help", "?": run = { [weak self] in self?.app.showHelp() }
         case "new": run = { [weak self] in self?.app.newSticky() }
         case "search", "find": run = { [weak self] in self?.app.showSearch() }
@@ -350,8 +366,8 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
                 NSWorkspace.shared.activateFileViewerSelecting([self.store.fileURL(for: self.note.id)])
             }
         default:
-            guard Theme.palettes.contains(where: { $0.name == command }) else { return false }
-            run = { [weak self] in self?.setColor(command) }
+            guard Theme.palettes.contains(where: { $0.name == verb }) else { return false }
+            run = { [weak self] in self?.setColor(verb) }
         }
         DispatchQueue.main.async(execute: run)
         return true
@@ -435,6 +451,15 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
             textView.insertPlain(" \(formatted)", at: token.upperBound)
         }
         textView.scrollRangeToVisible(textView.selectedRange())
+        playChimePreview()
+    }
+
+    /// Soft preview of the reminder chime — confirms scheduling audibly.
+    private func playChimePreview() {
+        guard let url = Bundle.main.url(forResource: "peel-chime", withExtension: "wav"),
+              let sound = NSSound(contentsOf: url, byReference: true) else { return }
+        sound.volume = 0.45
+        sound.play()
     }
 
     /// The menu shows exactly the text that will be inserted, so the free-form

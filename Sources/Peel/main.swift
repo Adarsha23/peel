@@ -7,7 +7,10 @@ import PeelKit
 ///   launched by macOS (or `peel gui`) → the actual app
 
 private func ownAppBundleURL() -> URL? {
-    var url = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+    // Bundle.main.executableURL survives being invoked as a bare "peel" from
+    // PATH, where argv[0] has no directory to resolve against.
+    let exec = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
+    var url = exec.resolvingSymlinksInPath()
     while url.path != "/" {
         if url.pathExtension == "app" { return url }
         url.deleteLastPathComponent()

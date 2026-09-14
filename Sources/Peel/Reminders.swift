@@ -34,10 +34,25 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
         return nil
     }
 
+    /// The custom chime lives in the app bundle; macOS reliably resolves custom
+    /// notification sounds from ~/Library/Sounds, so we mirror it there once.
+    static let chimeName = "peel-chime.wav"
+
     func activate() {
         guard Reminders.isAvailable else { return }
         UNUserNotificationCenter.current().delegate = self
         refreshAuthorizationStatus()
+        installChimeIfNeeded()
+    }
+
+    private func installChimeIfNeeded() {
+        guard let source = Bundle.main.url(forResource: "peel-chime", withExtension: "wav") else { return }
+        let soundsDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Sounds")
+        let dest = soundsDir.appendingPathComponent(Reminders.chimeName)
+        guard !FileManager.default.fileExists(atPath: dest.path) else { return }
+        try? FileManager.default.createDirectory(at: soundsDir, withIntermediateDirectories: true)
+        try? FileManager.default.copyItem(at: source, to: dest)
     }
 
     private func refreshAuthorizationStatus() {
@@ -48,6 +63,7 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
 
     func sync(note: Note) {
         guard Reminders.isAvailable else { return }
+        refreshAuthorizationStatus() // keep the editor's denied-warning current
         var wanted: [String: (Date, String)] = [:]
         for line in note.body.components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -73,7 +89,7 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
             let content = UNMutableNotificationContent()
             content.title = note.title
             content.body = text
-            content.sound = .default
+            content.sound = UNNotificationSound(named: UNNotificationSoundName(Reminders.chimeName))
             content.userInfo = ["noteID": note.id]
             let components = Calendar.current.dateComponents(
                 [.year, .month, .day, .hour, .minute], from: date)

@@ -158,15 +158,22 @@ final class NoteTextView: NSTextView {
                 if let (date, matchRange) = Reminders.detect(in: line) {
                     let dateRange = NSRange(location: lineStart + matchRange.location,
                                             length: matchRange.length)
-                    storage.addAttribute(.foregroundColor, value: NSColor.systemOrange, range: tokenRange)
+                    // Orange only when the reminder will actually reach you.
+                    let deliverable = Reminders.isAvailable && !Reminders.notificationsDenied
+                    let color: NSColor = deliverable ? .systemOrange : .systemRed
+                    storage.addAttribute(.foregroundColor, value: color, range: tokenRange)
                     storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue,
                                          range: dateRange)
-                    storage.addAttribute(.underlineColor, value: NSColor.systemOrange, range: dateRange)
-                    var tip = "Reminder: \(NoteTextView.remindTip.string(from: date))"
-                    if Reminders.notificationsDenied {
-                        tip += " — but notifications for Peel are off in System Settings"
-                    } else if !Reminders.isAvailable {
-                        tip += " — run the installed Peel.app for notifications"
+                    storage.addAttribute(.underlineColor, value: color, range: dateRange)
+                    let when = NoteTextView.remindTip.string(from: date)
+                    let tip: String
+                    if !Reminders.isAvailable {
+                        tip = "Time understood (\(when)), but notifications need the installed Peel.app"
+                    } else if Reminders.notificationsDenied {
+                        tip = "Time understood (\(when)), but notifications for Peel are OFF — "
+                            + "System Settings → Notifications → Peel, or run `peel doctor`"
+                    } else {
+                        tip = "Reminder: \(when)"
                     }
                     storage.addAttribute(.toolTip, value: tip, range: lineRange)
                     remindTokens.append((tokenRange, dateRange))
@@ -279,8 +286,8 @@ final class NoteTextView: NSTextView {
 
         // Slash commands: "/help" + return runs the command and erases the line.
         let trimmed = content.trimmingCharacters(in: .whitespaces)
-        if trimmed.hasPrefix("/"), trimmed.count > 1, !trimmed.contains(" "),
-           noteDelegate?.noteCommand(String(trimmed.dropFirst()).lowercased()) == true {
+        if trimmed.hasPrefix("/"), trimmed.count > 1,
+           noteDelegate?.noteCommand(String(trimmed.dropFirst())) == true {
             let lineRange = NSRange(location: lineStart, length: contentsEnd - lineStart)
             if shouldChangeText(in: lineRange, replacementString: "") {
                 replaceCharacters(in: lineRange, with: "")

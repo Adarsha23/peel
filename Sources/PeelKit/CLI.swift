@@ -1,4 +1,5 @@
 import Foundation
+import UserNotifications
 
 /// Terminal interface. Operates directly on the note files, so it works whether
 /// or not the app is running; the app's directory watcher picks up changes live.
@@ -15,6 +16,7 @@ public enum CLI {
         case "archive":         return archive(store, idPrefix: rest.first)
         case "path":            print(store.root.path); return 0
         case "ui":              return ui(rest.first)
+        case "doctor":          return doctor()
         case "help", "-h", "--help": return help()
         default:
             fputs("peel: unknown command '\(command)'\n", stderr)
@@ -94,6 +96,83 @@ public enum CLI {
         }
         store.archive(id: note.id)
         print("archived \(note.id)")
+        return 0
+    }
+
+    /// Why didn't my reminder fire? Reports the actual notification permission
+    /// state and every pending reminder with its scheduled time.
+    private static func doctor() -> Int32 {
+        guard Bundle.main.bundlePath.hasSuffix(".app"), Bundle.main.bundleIdentifier != nil else {
+            // Through the CLI symlink, Bundle.main sees /opt/homebrew/bin and the
+            // notification daemon won't talk to us — re-exec the real binary.
+            let exec = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
+            let resolved = exec.resolvingSymlinksInPath()
+            if resolved != exec, resolved.path.contains(".app/Contents/MacOS/") {
+                let process = Process()
+                process.executableURL = resolved
+                process.arguments = ["doctor"]
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    return process.terminationStatus
+                } catch {}
+            }
+            print("not running from Peel.app — notifications need the installed bundle (make install)")
+            return 1
+        }
+        let center = UNUserNotificationCenter.current()
+        let semaphore = DispatchSemaphore(value: 0)
+
+        var status = UNAuthorizationStatus.notDetermined
+        center.getNotificationSettings { settings in
+            status = settings.authorizationStatus
+            semaphore.signal()
+        }
+        semaphore.wait()
+
+        switch status {
+        case .authorized, .provisional:
+            print("notifications: allowed ✓")
+        case .denied:
+            print("notifications: DENIED — reminders are scheduled but macOS won't show them.")
+            print("fix: System Settings → Notifications → Peel → Allow Notifications")
+            print("     open \"x-apple.systempreferences:com.apple.preference.notifications\"")
+        case .notDetermined:
+            print("notifications: never asked/answered — requesting now, watch for the dialog")
+            print("(it appears over the desktop, not over fullscreen apps)")
+            var granted = false
+            center.requestAuthorization(options: [.alert, .sound]) { ok, _ in
+                granted = ok
+                semaphore.signal()
+            }
+            semaphore.wait()
+            print(granted ? "granted ✓ — reminders will fire now" : "not granted — reminders won't show")
+        @unknown default:
+            print("notifications: unknown status")
+        }
+
+        var pending: [UNNotificationRequest] = []
+        center.getPendingNotificationRequests { requests in
+            pending = requests
+            semaphore.signal()
+        }
+        semaphore.wait()
+
+        if pending.isEmpty {
+            print("pending reminders: none — @remind lines schedule when their note saves while the app is running")
+        } else {
+            let f = DateFormatter()
+            f.dateFormat = "EEE MMM d, h:mm a"
+            print("pending reminders (\(pending.count)):")
+            let dated = pending.map { req in
+                (date: (req.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate(),
+                 body: req.content.body)
+            }
+            for item in dated.sorted(by: { ($0.date ?? .distantFuture) < ($1.date ?? .distantFuture) }) {
+                print("  \(item.date.map(f.string(from:)) ?? "…")  \(item.body)")
+            }
+        }
+        print("also check: a Focus / Do Not Disturb mode silences banners even when allowed.")
         return 0
     }
 

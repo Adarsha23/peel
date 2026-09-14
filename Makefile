@@ -13,6 +13,7 @@ app: build
 	cp Support/Info.plist $(APP)/Contents/Info.plist
 	cp .build/release/Peel $(APP)/Contents/MacOS/Peel
 	@if [ -f Support/Peel.icns ]; then cp Support/Peel.icns $(APP)/Contents/Resources/; fi
+	@if [ -f Support/peel-chime.wav ]; then cp Support/peel-chime.wav $(APP)/Contents/Resources/; fi
 	codesign --force -s - $(APP)
 
 install: app

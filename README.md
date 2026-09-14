@@ -73,9 +73,13 @@ notification message. You can also write it all by hand:
 `@remind tomorrow 9am review the PR`.
 Feedback is live: the token turns **orange with the understood time
 underlined** when scheduled (hover for the exact date), **red** when no time
-was recognized. Click any `@remind` tag to pick or change its time. Requires
-notification permission (macOS asks once; if you declined, re-enable under
-System Settings → Notifications → Peel).
+was recognized — or when notifications can't be delivered (permission off,
+or not running the installed app). Click any `@remind` tag to pick or change
+its time. Reminders play a soft two-note chime; picking a time previews it.
+If a reminder didn't show, run `peel doctor` — it reports the real permission
+state and lists every pending reminder with its fire time. macOS shows the
+permission dialog over the desktop, not over fullscreen apps, so switch out
+of fullscreen if you've never seen it.
 
 ## Terminal
 
