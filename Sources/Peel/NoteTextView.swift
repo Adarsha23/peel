@@ -211,7 +211,7 @@ final class NoteTextView: NSTextView {
                     storage.addAttribute(.foregroundColor, value: NSColor.systemRed, range: tokenRange)
                     storage.addAttribute(
                         .toolTip,
-                        value: "No time recognized — click @remind to pick one, or write e.g. “tomorrow 9am” or “Sep 20, 2:30 PM”",
+                        value: "No time recognized, click @remind to pick one, or write e.g. “tomorrow 9am” or “Sep 20, 2:30 PM”",
                         range: lineRange)
                     remindTokens.append((tokenRange, nil))
                 }
