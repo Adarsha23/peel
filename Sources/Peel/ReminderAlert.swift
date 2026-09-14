@@ -20,8 +20,7 @@ final class ReminderAlert {
         dismiss()
 
         let width: CGFloat = 384
-        let height: CGFloat = 116
-        let panel = FloatPanel(frame: NSRect(x: 0, y: 0, width: width, height: height),
+        let panel = FloatPanel(frame: NSRect(x: 0, y: 0, width: width, height: 116),
                                resizable: false)
         panel.level = .statusBar // above the stickies
 
@@ -47,18 +46,23 @@ final class ReminderAlert {
         let titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = Theme.rounded(13.5, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
+        // the title yields (truncates) before it can push the time off the card
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         let timeFormatter = DateFormatter()
         timeFormatter.dateFormat = "h:mm a"
         let timeLabel = NSTextField(labelWithString: timeFormatter.string(from: Date()))
         timeLabel.font = Theme.rounded(11)
         timeLabel.textColor = .tertiaryLabelColor
+        timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        timeLabel.setContentHuggingPriority(.required, for: .horizontal)
 
         let bodyLabel = NSTextField(wrappingLabelWithString: text)
         bodyLabel.font = Theme.rounded(13)
         bodyLabel.textColor = .secondaryLabelColor
-        bodyLabel.maximumNumberOfLines = 2
+        bodyLabel.maximumNumberOfLines = 4 // the card grows; only novels truncate
         bodyLabel.lineBreakMode = .byTruncatingTail
+        bodyLabel.preferredMaxLayoutWidth = width - 48
 
         let open = textButton("Open Note", color: palette.accent, weight: .semibold,
                               action: #selector(openPressed))
@@ -97,6 +101,7 @@ final class ReminderAlert {
             bodyLabel.trailingAnchor.constraint(equalTo: effect.trailingAnchor, constant: -16),
 
             open.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            open.topAnchor.constraint(equalTo: bodyLabel.bottomAnchor, constant: 14),
             open.bottomAnchor.constraint(equalTo: effect.bottomAnchor, constant: -13),
             snooze.leadingAnchor.constraint(equalTo: open.trailingAnchor, constant: 18),
             snooze.centerYAnchor.constraint(equalTo: open.centerYAnchor),
@@ -109,6 +114,7 @@ final class ReminderAlert {
         } ?? NSScreen.main ?? NSScreen.screens[0]
         let visible = screen.visibleFrame
         var frame = panel.frame
+        frame.size.height = max(104, effect.fittingSize.height) // grow with the message
         frame.origin = NSPoint(x: visible.maxX - frame.width - 16,
                                y: visible.maxY - frame.height - 16)
         var start = frame
