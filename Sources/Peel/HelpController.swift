@@ -113,7 +113,7 @@ final class HelpController: NSObject, NSWindowDelegate {
         row("/new  /search", "sticky · search")
         row("/hide  /behind", "hide · layer toggle")
         row("/archive  /shot", "archive · screenshot")
-        row("/remind", "set a reminder — pick a time from a menu")
+        row("/remind", "pick a time, then type over “what to remember”")
         row("/date  /time", "insert date · time")
         row("/copy  /open", "copy note as markdown · show in Finder")
         row("/yellow …", "any color: cream blue green lavender pink graphite")

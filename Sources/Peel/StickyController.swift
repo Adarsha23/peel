@@ -415,15 +415,26 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
     @objc private func remindOptionPicked(_ sender: NSMenuItem) {
         guard let date = sender.representedObject as? Date else { return }
         let formatted = Self.remindInsert(date)
+        panel.makeKey()
+        panel.makeFirstResponder(textView)
         switch remindTarget {
         case .newLine:
-            textView.insertPlain("@remind \(formatted) — ", at: nil)
+            // Template with the message pre-selected — typing replaces it, so the
+            // line itself shows where the reminder text goes.
+            let prefix = "@remind \(formatted) — "
+            let hint = "what to remember"
+            let start = textView.selectedRange().location
+            textView.insertPlain(prefix + hint, at: nil)
+            textView.setSelectedRange(NSRange(location: start + (prefix as NSString).length,
+                                              length: (hint as NSString).length))
         case .replaceDate(let range):
             textView.replaceRange(range, with: formatted)
+            textView.setSelectedRange(NSRange(location: range.location + (formatted as NSString).length,
+                                              length: 0))
         case .insertAfterToken(let token):
             textView.insertPlain(" \(formatted)", at: token.upperBound)
         }
-        focusText()
+        textView.scrollRangeToVisible(textView.selectedRange())
     }
 
     /// The menu shows exactly the text that will be inserted, so the free-form

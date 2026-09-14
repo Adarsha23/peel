@@ -66,9 +66,11 @@ the attachment strip at the bottom of the sticky. Non-image files go straight
 to the strip; files over 100 MB are symlinked, not copied.
 
 **Reminders** — type `/remind` and pick a time from the menu ("In 30 minutes",
-"Tomorrow morning", …), then write what to remember. The menu inserts real
-text like `@remind Sep 15, 9:00 AM — `, so the free-form format teaches
-itself; you can also just write `@remind tomorrow 9am review the PR`.
+"Tomorrow morning", …). It inserts `@remind Sep 15, 9:00 AM — what to remember`
+with the message part pre-selected — just type your reminder text over it.
+Everything on the line besides `@remind` and the time becomes the
+notification message. You can also write it all by hand:
+`@remind tomorrow 9am review the PR`.
 Feedback is live: the token turns **orange with the understood time
 underlined** when scheduled (hover for the exact date), **red** when no time
 was recognized. Click any `@remind` tag to pick or change its time. Requires
