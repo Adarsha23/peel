@@ -8,6 +8,7 @@ struct Config: Codable {
     var searchHotkey: String?
     var clipHotkey: String?
     var autoDockSeconds: Double? // idle stickies tuck into the shelf; 0 disables
+    var keys: [String: String]? // in-sticky shortcut overrides, see KeyMap
 
     static func load(from root: URL) -> Config {
         let url = root.appendingPathComponent("config.json")
@@ -52,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var gitTimer: Timer?
     private var idleTimer: Timer?
     private var config = Config()
+    private(set) var keyMap = KeyMap()
 
     // MARK: Lifecycle
 
@@ -69,6 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         config = Config.load(from: store.root)
+        keyMap = KeyMap(overrides: config.keys)
         if let spec = config.toggleHotkey ?? "cmd+shift+space" as String?,
            let hotkey = HotKey(spec: spec, handler: { [weak self] in self?.toggleStickies() }) {
             hotkeys.append(hotkey)
