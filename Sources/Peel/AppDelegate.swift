@@ -9,6 +9,7 @@ struct Config: Codable {
     var clipHotkey: String?
     var autoDockSeconds: Double? // idle stickies tuck into the shelf; 0 disables
     var keys: [String: String]? // in-sticky shortcut overrides, see KeyMap
+    var shelfEdge: String? // bottom | top | left | right
 
     static func load(from root: URL) -> Config {
         let url = root.appendingPathComponent("config.json")
@@ -95,7 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.gitSnapshot()
         }
 
-        shelf.start()
+        shelf.start(edge: ShelfEdge(rawValue: config.shelfEdge ?? "") ?? .bottom)
         idleTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.idleSweep()
         }
@@ -206,6 +207,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 controller.setGhost(true)
             }
         }
+    }
+
+    @objc private func shelfEdgePicked(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let edge = ShelfEdge(rawValue: raw) else { return }
+        config.shelfEdge = raw
+        config.save(to: store.root)
+        shelf.setEdge(edge)
+        sender.menu?.items.forEach { $0.state = ($0 == sender) ? .on : .off }
     }
 
     @objc private func toggleAutoDock(_ sender: NSMenuItem) {
@@ -454,6 +464,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(menuItem("Open Notes Folder", #selector(openNotesFolder), ""))
         menu.addItem(menuItem("Keyboard Shortcuts", #selector(showHelp), ""))
         menu.addItem(.separator())
+        let edgeItem = NSMenuItem(title: "Shelf Edge", action: nil, keyEquivalent: "")
+        let edgeMenu = NSMenu()
+        let currentEdge = ShelfEdge(rawValue: Config.load(from: store.root).shelfEdge ?? "") ?? .bottom
+        for edge in ShelfEdge.allCases {
+            let item = NSMenuItem(title: edge.rawValue.capitalized,
+                                  action: #selector(shelfEdgePicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = edge.rawValue
+            if edge == currentEdge { item.state = .on }
+            edgeMenu.addItem(item)
+        }
+        edgeItem.submenu = edgeMenu
+        menu.addItem(edgeItem)
         let tuckItem = menuItem("Auto-tuck Idle Stickies", #selector(toggleAutoDock(_:)), "")
         tuckItem.state = (Config.load(from: store.root).autoDockSeconds ?? 0) > 0 ? .on : .off
         menu.addItem(tuckItem)
