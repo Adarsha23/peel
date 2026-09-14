@@ -91,7 +91,7 @@ final class HelpController: NSObject, NSWindowDelegate {
         section("GLOBAL")
         row("⌘⇧space", "show · focus · press again to hide")
         row("⌃⌥V", "new sticky from whatever's on the clipboard")
-        row("bottom edge", "push the cursor down: shelf of all stickies, click to open")
+        row("screen edge", "push the cursor in: shelf of all stickies (pick the side in the menu bar)")
 
         section("IN A STICKY")
         row("esc / ⌘W", "hide sticky")
@@ -118,7 +118,7 @@ final class HelpController: NSObject, NSWindowDelegate {
         row("[] + space", "todo")
         row("- + space", "bullet")
         row("``` … ```", "code block")
-        row("@remind", "click to pick a time · fires a Peel card + chime that waits for you")
+        row("@remind", "in 20 min · every weekday 9am · click the tag to pick")
         row("240*1.18=", "typing = after math inserts the result")
         row("[[note title]]", "link to another sticky — click to jump, [[ offers titles")
         row("⟦image-1.png⟧", "click to view · drop/paste to add · text inside is searchable")
@@ -134,6 +134,10 @@ final class HelpController: NSObject, NSWindowDelegate {
         row("/copy  /open", "copy note as markdown · show in Finder")
         row("/count /trim", "stats · tidy whitespace (also /lower /upper)")
         row("/yellow …", "any color: cream blue green lavender pink graphite")
+
+        section("CONFIG.JSON")
+        row("keys", "remap every in-sticky shortcut, pipe for combos, none unbinds")
+        row("shelfEdge · hotkeys", "bottom/top/left/right · global hotkey specs")
 
         section("TERMINAL")
         row("peel", "new · list · search · today · show <id> · ui <cmd>")

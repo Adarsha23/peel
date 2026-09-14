@@ -1,5 +1,5 @@
 import AppKit
-import UniformTypeIdentifiers
+import PeelKit
 
 /// Horizontal row of attachment chips below the note text. The strip mirrors the
 /// note's attachments/ folder exactly — no separate bookkeeping to corrupt.
@@ -57,7 +57,6 @@ private final class ChipView: NSView {
     let url: URL
     var onRemove: (() -> Void)?
 
-    private static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp"]
 
     init(url: URL) {
         self.url = url
@@ -68,7 +67,7 @@ private final class ChipView: NSView {
         layer?.masksToBounds = true
         toolTip = url.lastPathComponent
 
-        let isImage = ChipView.imageExtensions.contains(url.pathExtension.lowercased())
+        let isImage = OCR.imageExtensions.contains(url.pathExtension.lowercased())
         if isImage, let thumb = ChipView.thumbnail(for: url) {
             let imageView = NSImageView(image: thumb)
             imageView.imageScaling = .scaleProportionallyUpOrDown

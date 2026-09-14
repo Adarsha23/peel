@@ -39,9 +39,7 @@ final class ReminderAlert {
         let spine = NSView()
         spine.wantsLayer = true
         spine.layer?.cornerRadius = 2
-
-        let dotLayerColor = palette.accent
-        spine.layer?.backgroundColor = dotLayerColor.cgColor
+        spine.layer?.backgroundColor = palette.accent.cgColor
 
         let titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = Theme.rounded(13.5, weight: .semibold)
@@ -182,25 +180,14 @@ final class ReminderAlert {
 }
 
 /// The note-colored paper of the card; clicking anywhere opens the note.
-private final class CardView: NSView {
+private final class CardView: TintView {
     var onClick: (() -> Void)?
-    var color: NSColor = .clear { didSet { needsDisplay = true } }
 
-    override var wantsUpdateLayer: Bool { true }
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        layer?.cornerRadius = 16
-        layer?.borderWidth = 0.5
+    init() {
+        super.init(cornerRadius: 16)
     }
 
     required init?(coder: NSCoder) { fatalError() }
-
-    override func updateLayer() {
-        layer?.backgroundColor = color.withAlphaComponent(0.92).cgColor
-        layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.1).cgColor
-    }
 
     override func mouseDown(with event: NSEvent) {
         onClick?()

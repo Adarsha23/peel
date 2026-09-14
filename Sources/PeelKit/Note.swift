@@ -75,6 +75,19 @@ public struct Note: Equatable {
     }
 }
 
+public extension Date {
+    /// "now", "5m", "3h", "2d": how Peel talks about note age everywhere.
+    var shortAge: String {
+        let seconds = Int(-timeIntervalSinceNow)
+        switch seconds {
+        case ..<60: return "now"
+        case ..<3600: return "\(seconds / 60)m"
+        case ..<86400: return "\(seconds / 3600)h"
+        default: return "\(seconds / 86400)d"
+        }
+    }
+}
+
 // MARK: - Serialization
 
 public extension Note {

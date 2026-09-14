@@ -99,6 +99,10 @@ Want it always around? Menu bar icon, "Start at Login". Done.
 | `⌃⌥A` | archive |
 | `⌃⌥1..7` | recolor |
 
+Every one of those is remappable: `"keys": {"hide": "cmd+shift+w", "bold": "none"}`
+in config.json, pipe for multiple chords. The shelf edge is configurable too
+(`"shelfEdge": "left"`, or pick it in the menu bar).
+
 Type `/` on an empty line for the command menu, or `/help` for the full
 cheatsheet in-app. Typing tricks: `[]` + space starts a todo, `-` + space a
 bullet, ``` fences make a code block, `[[` links to another note, and
@@ -110,10 +114,15 @@ Type `/remind`, pick a time from the menu, type what to remember over the
 selected placeholder. Or write it by hand, Peel reads natural language:
 
 ```
+@remind in 20 min pay rent
 @remind tomorrow 9am call the bank
+@remind every weekday at 9:30am standup
+@remind every weekend 10am touch grass
 @remind Sep 20, 2:30 PM check the oven
-/remind in 20 min pay rent
 ```
+
+Recurring ones re-arm themselves after every fire. Hours 1 to 7 with no am/pm
+mean afternoon, because nobody sets a 3am reminder on purpose.
 
 Live feedback while you type: the time gets underlined in orange when Peel
 understood it, the tag turns red when it didn't (hover it for why). Click any

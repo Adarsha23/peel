@@ -195,7 +195,7 @@ final class SearchController: NSObject, NSTextFieldDelegate, NSTableViewDataSour
         snippet.font = Theme.rounded(11)
         snippet.textColor = .secondaryLabelColor
         snippet.lineBreakMode = .byTruncatingTail
-        let date = NSTextField(labelWithString: Self.relative(note.updated))
+        let date = NSTextField(labelWithString: note.updated.shortAge)
         date.font = Theme.rounded(11)
         date.textColor = .tertiaryLabelColor
 
