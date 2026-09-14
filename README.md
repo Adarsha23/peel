@@ -111,8 +111,13 @@ crashes the app.
 
 ## Claude Code
 
-Point Claude Code at the data directory and everything just works — notes are
-markdown, attachments are ordinary files with relative links from the note:
+`make install` also installs a `peel-notes` skill into `~/.claude/skills/`, so
+any Claude Code session knows where the notes live, how to search them, how to
+resolve inline `![…](../attachments/<id>/…)` screenshot references (and view
+them in the order they appear in the note), and how to write notes back onto
+your screen with `peel new`. Point Claude Code at the data directory and
+everything just works — notes are markdown, attachments are ordinary files
+with relative links from the note:
 
 ```
 "Read my sticky notes from today"   →  peel today

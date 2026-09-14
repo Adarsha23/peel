@@ -22,7 +22,9 @@ install: app
 	rm -rf ~/Applications/Peel.app
 	cp -R $(APP) ~/Applications/
 	ln -sf ~/Applications/Peel.app/Contents/MacOS/Peel $(BINDIR)/peel
-	@echo "Installed ~/Applications/Peel.app  (CLI: peel)"
+	mkdir -p ~/.claude/skills/peel-notes
+	cp Support/SKILL.md ~/.claude/skills/peel-notes/SKILL.md
+	@echo "Installed ~/Applications/Peel.app  (CLI: peel, Claude Code skill: peel-notes)"
 
 test:
 	swift test \
