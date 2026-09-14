@@ -12,27 +12,12 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
 
     var reveal: ((String) -> Void)?
 
-    /// One detector shared with the editor, so live styling and actual
-    /// scheduling always agree on what parses.
-    static let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
-
     /// True when the user has declined notification permission — the editor
     /// surfaces this in the @remind tooltip instead of failing silently.
     private(set) static var notificationsDenied = false
 
     private var scheduled: [String: Set<String>] = [:] // note id -> notification ids
     private var authorizationRequested = false
-
-    /// First future date found in a line, with its range in that line.
-    static func detect(in line: String) -> (date: Date, range: NSRange)? {
-        guard let detector else { return nil }
-        let ns = line as NSString
-        let matches = detector.matches(in: line, range: NSRange(location: 0, length: ns.length))
-        for match in matches {
-            if let date = match.date, date > Date() { return (date, match.range) }
-        }
-        return nil
-    }
 
     /// The custom chime lives in the app bundle; macOS reliably resolves custom
     /// notification sounds from ~/Library/Sounds, so we mirror it there once.
@@ -68,63 +53,95 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
     private var timers: [String: Timer] = [:]
 
     func sync(note: Note) {
-        var wanted: [String: (Date, String)] = [:]
+        var wanted: [String: (match: When.Match, text: String, line: String)] = [:]
         for line in note.body.components(separatedBy: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard trimmed.hasPrefix("@remind") else { continue }
-            guard let (date, dateRange) = Reminders.detect(in: trimmed) else { continue }
-            // Reminder text = the line minus the @remind token and the date phrase.
-            var text = (trimmed as NSString).replacingCharacters(in: dateRange, with: " ")
+            guard let match = When.detect(in: trimmed) else { continue }
+            // Reminder text = the line minus the @remind token and the time phrase.
+            var text = (trimmed as NSString).replacingCharacters(in: match.range, with: " ")
             text = text.replacingOccurrences(of: "@remind", with: "")
                 .trimmingCharacters(in: CharacterSet.whitespaces.union(.init(charactersIn: "—–-:,")))
             if text.isEmpty { text = note.title }
-            wanted["peel.\(note.id).\(stableHash(trimmed))"] = (date, text)
+            wanted["peel.\(note.id).\(stableHash(trimmed))"] = (match, text, trimmed)
         }
 
         // The primary path: in-app timers. Works regardless of notification
         // permission, alert styles, Focus modes, or signing identity.
+        // Recurring reminders re-arm themselves after each fire.
         let prefix = "peel.\(note.id)."
         for (id, timer) in timers where id.hasPrefix(prefix) && wanted[id] == nil {
             timer.invalidate()
             timers[id] = nil
         }
-        for (id, (date, text)) in wanted where timers[id] == nil {
-            let noteID = note.id
-            let timer = Timer(fire: date, interval: 0, repeats: false) { [weak self] _ in
-                self?.fire(id: id, noteID: noteID, text: text)
-            }
-            RunLoop.main.add(timer, forMode: .common)
-            timers[id] = timer
+        for (id, item) in wanted where timers[id] == nil {
+            scheduleTimer(id: id, noteID: note.id, fireAt: item.match.date,
+                          text: item.text, line: item.line)
         }
 
         // Secondary: system notifications, so reminders survive the app being quit.
         guard Reminders.isAvailable else { return }
         refreshAuthorizationStatus() // keep the editor's denied-warning current
         let center = UNUserNotificationCenter.current()
-        let previous = scheduled[note.id] ?? []
-        let stale = previous.subtracting(wanted.keys)
-        if !stale.isEmpty { center.removePendingNotificationRequests(withIdentifiers: Array(stale)) }
-        scheduled[note.id] = Set(wanted.keys)
-        guard !wanted.isEmpty else { return }
-
-        requestAuthorizationIfNeeded()
-        for (id, (date, text)) in wanted {
+        var systemIDs = Set<String>()
+        var requests: [UNNotificationRequest] = []
+        for (id, item) in wanted {
             let content = UNMutableNotificationContent()
             content.title = note.title
-            content.body = text
+            content.body = item.text
             content.sound = UNNotificationSound(named: UNNotificationSoundName(Reminders.chimeName))
             content.userInfo = ["noteID": note.id]
-            let components = Calendar.current.dateComponents(
-                [.year, .month, .day, .hour, .minute], from: date)
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
-            center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+            let clock = Calendar.current.dateComponents([.hour, .minute], from: item.match.date)
+            switch item.match.repeats {
+            case .none:
+                let full = Calendar.current.dateComponents(
+                    [.year, .month, .day, .hour, .minute], from: item.match.date)
+                requests.append(UNNotificationRequest(
+                    identifier: id, content: content,
+                    trigger: UNCalendarNotificationTrigger(dateMatching: full, repeats: false)))
+                systemIDs.insert(id)
+            case .daily:
+                requests.append(UNNotificationRequest(
+                    identifier: id, content: content,
+                    trigger: UNCalendarNotificationTrigger(dateMatching: clock, repeats: true)))
+                systemIDs.insert(id)
+            case .weekdays, .weekends, .weekly:
+                // one repeating request per firing day
+                for day in item.match.repeats.firingWeekdays {
+                    var byDay = clock
+                    byDay.weekday = day
+                    let dayID = "\(id).d\(day)"
+                    requests.append(UNNotificationRequest(
+                        identifier: dayID, content: content,
+                        trigger: UNCalendarNotificationTrigger(dateMatching: byDay, repeats: true)))
+                    systemIDs.insert(dayID)
+                }
+            }
         }
+        let stale = (scheduled[note.id] ?? []).subtracting(systemIDs)
+        if !stale.isEmpty { center.removePendingNotificationRequests(withIdentifiers: Array(stale)) }
+        scheduled[note.id] = systemIDs
+        guard !requests.isEmpty else { return }
+        requestAuthorizationIfNeeded()
+        requests.forEach { center.add($0) }
     }
 
-    private func fire(id: String, noteID: String, text: String) {
+    private func scheduleTimer(id: String, noteID: String, fireAt: Date,
+                               text: String, line: String) {
+        let timer = Timer(fire: fireAt, interval: 0, repeats: false) { [weak self] _ in
+            self?.fire(id: id, noteID: noteID, text: text, line: line)
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        timers[id] = timer
+    }
+
+    private func fire(id: String, noteID: String, text: String, line: String) {
         timers[id] = nil
-        if Reminders.isAvailable {
-            // the app is alive and presenting this itself — no system double
+        if let next = When.detect(in: line), next.repeats != .none {
+            // recurring: arm the next occurrence
+            scheduleTimer(id: id, noteID: noteID, fireAt: next.date, text: text, line: line)
+        } else if Reminders.isAvailable {
+            // one-shot, the app is alive and presenting this itself: no system double
             UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
         }
         onFire?(noteID, text)
@@ -134,12 +151,9 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
     func snooze(noteID: String, text: String, minutes: Double) {
         let id = "peel.\(noteID).snooze.\(stableHash(text))"
         timers[id]?.invalidate()
-        let timer = Timer(fire: Date().addingTimeInterval(minutes * 60), interval: 0, repeats: false) {
-            [weak self] _ in
-            self?.fire(id: id, noteID: noteID, text: text)
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        timers[id] = timer
+        scheduleTimer(id: id, noteID: noteID,
+                      fireAt: Date().addingTimeInterval(minutes * 60),
+                      text: text, line: "")
     }
 
     /// Cancel everything scheduled for a note (it was archived or deleted).

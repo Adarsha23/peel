@@ -195,26 +195,16 @@ final class NoteTextView: NSTextView {
             if trimmed.hasPrefix("@remind") {
                 let tokenRange = NSRange(location: glyphLocation, length: 7)
                 storage.addAttribute(.cursor, value: NSCursor.pointingHand, range: tokenRange)
-                if let (date, matchRange) = Reminders.detect(in: line) {
-                    let dateRange = NSRange(location: lineStart + matchRange.location,
-                                            length: matchRange.length)
-                    // Orange only when the reminder will actually reach you.
-                    let deliverable = Reminders.isAvailable && !Reminders.notificationsDenied
-                    let color: NSColor = deliverable ? .systemOrange : .systemRed
-                    storage.addAttribute(.foregroundColor, value: color, range: tokenRange)
+                if let match = When.detect(in: line) {
+                    let dateRange = NSRange(location: lineStart + match.range.location,
+                                            length: match.range.length)
+                    storage.addAttribute(.foregroundColor, value: NSColor.systemOrange, range: tokenRange)
                     storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue,
                                          range: dateRange)
-                    storage.addAttribute(.underlineColor, value: color, range: dateRange)
-                    let when = NoteTextView.remindTip.string(from: date)
-                    let tip: String
-                    if !Reminders.isAvailable {
-                        tip = "Time understood (\(when)), but notifications need the installed Peel.app"
-                    } else if Reminders.notificationsDenied {
-                        tip = "Time understood (\(when)), but notifications for Peel are OFF — "
-                            + "System Settings → Notifications → Peel, or run `peel doctor`"
-                    } else {
-                        tip = "Reminder: \(when)"
-                    }
+                    storage.addAttribute(.underlineColor, value: NSColor.systemOrange, range: dateRange)
+                    let when = NoteTextView.remindTip.string(from: match.date)
+                    let tip = match.repeats.label.map { "Repeats \($0), next \(when)" }
+                        ?? "Reminder: \(when)"
                     storage.addAttribute(.toolTip, value: tip, range: lineRange)
                     remindTokens.append((tokenRange, dateRange))
                 } else {
