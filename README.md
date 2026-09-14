@@ -53,14 +53,85 @@ one interaction is the whole reason Peel exists. Everything else grew around it.
 | --- | --- |
 | <img src="docs/sticky.png" alt="Sticky with inline image token and todos"> | <img src="docs/formatting.png" alt="Live markdown formatting"> |
 | Screenshots land inline, exactly where you dropped them | Live markdown. Plain text on disk, styled in the editor |
-| <img src="docs/search.png" alt="Spotlight-style search"> | <img src="docs/reminder-card.png" alt="Reminder card"> |
-| Search notes, filenames, and the text inside screenshots | Reminder cards in the note's color. They wait for you |
+| <img src="docs/remind-inline.png" alt="@remind lines with live parse feedback"> | <img src="docs/reminder-card.png" alt="The reminder card that fired from that note"> |
+| Type a time, Peel underlines what it understood | ...and at 9:04 it fired. The card waits until you deal with it |
 
-Plus: a shelf of note tabs when you push your cursor to the screen edge (hover
-a tab for a browser-style ✕), `[[note links]]` between stickies, an inline
-calculator (`240*1.18=` and the answer appears), a `/` command menu, snap
-alignment while dragging, seven muted paper colors, per-note text zoom, and a
-real CLI.
+<p align="center"><img src="docs/shelf.png" alt="The shelf: every note as a tab along the screen edge"><br>
+<sub>The shelf. Cursor to the screen edge, every note shows up as a tab. Click to open, hover for a browser-style close.</sub></p>
+
+<p align="center"><img src="docs/search.png" width="620" alt="Spotlight-style search"><br>
+<sub>Search over note text, filenames, and the words inside your screenshots.</sub></p>
+
+## every damn feature
+
+Some apps list five features because they have five. This list is long because
+the app does a lot, and all of it is free and local.
+
+**Catch the thought before it dies**
+- `⌘⇧Space` from anywhere: latest sticky, focused, cursor ready. Press again to clear the desk
+- `⌃⌥V`: whatever's on the clipboard becomes a sticky. Text, screenshot, files, whatever
+- `peel new "thing"` from the terminal, and the sticky pops on screen
+- everything autosaves 400 ms after you stop typing. There is no save button. Kill the app, kill the Mac, your note survives
+
+**The overlay nobody else ships**
+- floats over fullscreen video and the video keeps playing. Click the sticky, type, click back. Zero interruptions
+- non-activating panels: Peel never steals your app's focus, never switches your menu bar
+- lives on every Space, remembers its exact position and size per monitor, across restarts
+- `⌃⌥B` parks a sticky behind your windows; bring it back the same way
+- idle stickies fade to 40% so you can read what's under them. Touch brings them back. Optional auto-tuck to the shelf
+- drag one near another and the edges snap. Slow drags magnetize, fast drags fly free
+
+**The shelf**
+- push the cursor into a screen edge: every note as a color-coded tab, first line as the label
+- pick your edge (bottom, top, left, right) from the menu bar. Vertical edges get a column
+- click a tab and the sticky expands out of it, dock-style. Hover for ✕, or hit `✕ all`
+
+**Writing that stays honest**
+- what's on disk is what you see: markdown source, styled live. No rich-text lock-in, ever
+- `**bold**` `*italic*` `` `code` `` `~~strike~~` `==highlight==` `#` headings, markers dimmed in place
+- `[]` + space makes a todo, click the box or `⌘↩` to check it. Enter continues lists, bullets, numbering
+- code fences go monospaced, URLs are clickable, first line renders as the note's title
+- `240*1.18=` and the answer appears. Real parser, division by zero does nothing embarrassing
+- `[[note title]]` links between stickies. Type `[[` and your titles autocomplete. Link to a note that doesn't exist and clicking it creates one
+- `⌘+` `⌘−` per-sticky text zoom, seven muted paper colors on `⌃⌥1..7`, paste is always plain text
+- `/` on an empty line opens the command menu: type to filter, click to run. `/count` `/trim` `/lower` `/upper` `/date` `/time` `/copy` and friends
+
+**Images and files**
+- paste or drop an image: saved locally, referenced inline right where your cursor was, as a clickable tag
+- delete the tag and the file isn't gone, it falls back to the attachment strip
+- `⌃⌥S` takes a screenshot straight into the note (the sticky hides itself so it's not in your shot)
+- every image is OCR'd on-device. Search finds notes by the text inside their screenshots
+- non-image files get chips: click to open, right-click to reveal, copy path, or trash. 100 MB+ files get symlinked, not copied
+
+**Reminders that actually fire**
+- `@remind in 20 min pay rent`. `@remind tomorrow 9am call bank`. `@remind every weekday at 9:30 standup`. `@remind every weekend 10am touch grass`
+- relative, absolute, and recurring, parsed by a deterministic grammar with tests, not vibes
+- live feedback while typing: understood time gets underlined orange, red means try again, tooltip shows exactly what's armed
+- `/remind` picks from a menu, click any @remind tag to change its time
+- at fire time: Peel's own floating card in the note's color, with a synthesized two-note chime. Works over fullscreen, ignores Do Not Disturb, survives your screensaver, and waits until you hit Open, Snooze, or Done
+- system notifications stay on as the fallback for when the app isn't running. `peel doctor` diagnoses that whole pipeline when macOS acts up
+
+**Find anything**
+- `⌃⌥F`: Spotlight-style palette, live results, arrow keys, enter to jump. Recent notes when the query's empty
+- searches bodies, attachment names, and OCR'd screenshot text. CLI search includes archived notes too
+
+**Your data, your rules**
+- plain markdown files with readable frontmatter in one transparent folder
+- auto-committed to a local git repo at launch and every 6 hours. Nothing is ever lost, nothing ever leaves your Mac
+- archive instead of delete, attachments trash instead of vanish, corrupt files load as plain text instead of crashing
+- `PEEL_DATA_DIR` moves the whole thing (point it at iCloud Drive for zero-server sync)
+- remap every shortcut, hotkey, and the shelf edge in `config.json`. The JSON is the settings UI
+
+**Claude Code, first-class**
+- `make install` drops a skill that teaches Claude where notes live, how to read your screenshots in the order you placed them, and how to pop results onto your screen with `peel new`
+- edit a note file from anywhere (Claude, vim, a script) and the open sticky updates within 2 seconds
+
+**The little things**
+- double-click a header to collapse a sticky to its title line
+- `⌘⌫` deletes to line start and keeps eating upward on repeat
+- menu bar home with Start at Login, screenshot capture, and every toggle
+- light and dark palettes designed separately, not inverted
+- the whole app is one ~600 KB binary with zero dependencies. Launches before you finish blinking
 
 ## install
 
