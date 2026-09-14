@@ -421,7 +421,7 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
         case .newLine:
             // Template with the message pre-selected — typing replaces it, so the
             // line itself shows where the reminder text goes.
-            let prefix = "@remind \(formatted) — "
+            let prefix = "@remind \(formatted) - "
             let hint = "what to remember"
             let start = textView.selectedRange().location
             textView.insertPlain(prefix + hint, at: nil)

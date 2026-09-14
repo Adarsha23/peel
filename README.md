@@ -66,7 +66,7 @@ the attachment strip at the bottom of the sticky. Non-image files go straight
 to the strip; files over 100 MB are symlinked, not copied.
 
 **Reminders** — type `/remind` and pick a time from the menu ("In 30 minutes",
-"Tomorrow morning", …). It inserts `@remind Sep 15, 9:00 AM — what to remember`
+"Tomorrow morning", …). It inserts `@remind Sep 15, 9:00 AM - what to remember`
 with the message part pre-selected — just type your reminder text over it.
 Everything on the line besides `@remind` and the time becomes the
 notification message. You can also write it all by hand:
