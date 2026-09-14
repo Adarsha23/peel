@@ -59,6 +59,9 @@ one interaction is the whole reason Peel exists. Everything else grew around it.
 <p align="center"><img src="docs/shelf.png" alt="The shelf: every note as a tab along the screen edge"><br>
 <sub>The shelf. Cursor to the screen edge, every note shows up as a tab. Click to open, hover for a browser-style close.</sub></p>
 
+<p align="center"><img src="docs/ghost.png" width="560" alt="An idle sticky gone translucent over a playlist, still readable both ways"><br>
+<sub>Leave a sticky alone and it goes translucent (yes, that's what it's called) so what's underneath stays readable. Touch it, it's back.</sub></p>
+
 <p align="center"><img src="docs/search.png" width="620" alt="Spotlight-style search"><br>
 <sub>Search over note text, filenames, and the words inside your screenshots.</sub></p>
 
