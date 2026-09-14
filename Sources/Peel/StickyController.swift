@@ -873,49 +873,36 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
 
     // MARK: Key equivalents (the app is usually inactive, so the panel routes these)
 
-    /// Sticky commands live on ⌃⌥ so they never collide with browser/terminal
-    /// muscle memory (⌘N, ⌘W, ⌘F stay untouched). Only ⌘↩ is borrowed — the
-    /// universal todo-toggle — and esc hides (handled via cancelOperation).
+    /// All in-sticky shortcuts route through the user-remappable KeyMap.
+    /// Color chords (⌃⌥1..7) stay fixed: one per palette, positional by design.
     func handleKeyEquivalent(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let key = (event.charactersIgnoringModifiers ?? "").lowercased()
-
-        if modifiers == .command {
-            switch key {
-            case "\r": textView.toggleTodo(nil); return true
-            case "t": app.newSticky(); return true          // browser muscle memory: new "tab"
-            case "w": hide(); return true                   // …and close it
-            case "\u{1B}": app.hideAll(); return true       // ⌘esc — clear the desk
-            case "b": textView.toggleWrap("**"); return true
-            case "i": textView.toggleWrap("*"); return true
-            case "e": textView.toggleWrap("`"); return true
-            case "=", "+": adjustFontSize(+1); return true
-            case "-": adjustFontSize(-1); return true
-            case "0": adjustFontSize(reset: true); return true
-            default: break
-            }
+        if modifiers == [.control, .option],
+           let digit = Int(event.charactersIgnoringModifiers ?? ""),
+           (1...Theme.palettes.count).contains(digit) {
+            setColor(Theme.palettes[digit - 1].name)
+            return true
         }
-        if modifiers == [.command, .shift] {
-            switch key {
-            case "x": textView.toggleWrap("~~"); return true
-            case "h": textView.toggleWrap("=="); return true
-            default: break
-            }
+        guard let action = app.keyMap.action(for: event) else { return false }
+        switch action {
+        case .newSticky: app.newSticky()
+        case .hide: hide()
+        case .hideAll: app.hideAll()
+        case .toggleTodo: textView.toggleTodo(nil)
+        case .search: app.showSearch()
+        case .layerToggle: toggleLayer()
+        case .screenshot: captureScreenshot()
+        case .archive: archive()
+        case .bold: textView.toggleWrap("**")
+        case .italic: textView.toggleWrap("*")
+        case .code: textView.toggleWrap("`")
+        case .strike: textView.toggleWrap("~~")
+        case .highlight: textView.toggleWrap("==")
+        case .zoomIn: adjustFontSize(+1)
+        case .zoomOut: adjustFontSize(-1)
+        case .zoomReset: adjustFontSize(reset: true)
         }
-        guard modifiers == [.control, .option] else { return false }
-        switch key {
-        case "n": app.newSticky(); return true
-        case "f": app.showSearch(); return true
-        case "b": toggleLayer(); return true
-        case "s": captureScreenshot(); return true
-        case "a": archive(); return true
-        default:
-            if let digit = Int(key), (1...Theme.palettes.count).contains(digit) {
-                setColor(Theme.palettes[digit - 1].name)
-                return true
-            }
-            return false
-        }
+        return true
     }
 }
 
