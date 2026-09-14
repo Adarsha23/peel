@@ -91,6 +91,7 @@ final class HelpController: NSObject, NSWindowDelegate {
         section("GLOBAL")
         row("⌘⇧space", "show · focus · press again to hide")
         row("⌃⌥V", "new sticky from whatever's on the clipboard")
+        row("bottom edge", "push the cursor down: shelf of all stickies, click to open")
 
         section("IN A STICKY")
         row("esc / ⌘W", "hide sticky")
@@ -104,6 +105,11 @@ final class HelpController: NSObject, NSWindowDelegate {
         row("⌃⌥S", "screenshot into note")
         row("⌃⌥A", "archive note")
         row("⌃⌥1–7", "change color")
+
+        section("FORMATTING")
+        row("⌘B  ⌘I  ⌘E", "**bold** · *italic* · `code` — toggles the selection")
+        row("⌘⇧X  ⌘⇧H", "~~strikethrough~~ · ==highlight==")
+        row("#  ##", "headings")
 
         section("TYPING")
         row("/", "on an empty line: command menu — type to filter, click to apply")

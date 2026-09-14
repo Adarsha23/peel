@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastPollCount = -1
     private lazy var search = SearchController(app: self)
     private let help = HelpController()
+    private lazy var shelf = ShelfController(app: self)
     private var colorRotation = 0
     private var gitTimer: Timer?
 
@@ -81,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.gitSnapshot()
         }
 
+        shelf.start()
         startWatcher()
         reminders.activate()
         reminders.reveal = { [weak self] id in self?.reveal(id: id, focus: true) }
@@ -99,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "hide-all": hideAll()
         case "help": showHelp()
         case "clip": clipCapture()
+        case "shelf": if let screen = NSScreen.main { shelf.showManually(on: screen) }
         default: break
         }
     }

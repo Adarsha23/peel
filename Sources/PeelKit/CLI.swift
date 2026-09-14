@@ -123,12 +123,13 @@ public enum CLI {
         let center = UNUserNotificationCenter.current()
         let semaphore = DispatchSemaphore(value: 0)
 
-        var status = UNAuthorizationStatus.notDetermined
+        var captured: UNNotificationSettings?
         center.getNotificationSettings { settings in
-            status = settings.authorizationStatus
+            captured = settings
             semaphore.signal()
         }
         semaphore.wait()
+        let status = captured?.authorizationStatus ?? .notDetermined
 
         switch status {
         case .authorized, .provisional:
@@ -149,6 +150,24 @@ public enum CLI {
             print(granted ? "granted ✓ — reminders will fire now" : "not granted — reminders won't show")
         @unknown default:
             print("notifications: unknown status")
+        }
+
+        if let settings = captured, status == .authorized || status == .provisional {
+            // "Allow" can be on while the visible parts are off — surface each piece.
+            let style: String
+            switch settings.alertStyle {
+            case .banner: style = "banners ✓"
+            case .alert: style = "alerts ✓"
+            case .none: style = "NONE — notifications are invisible! Set Peel's alert style to Banners in System Settings"
+            @unknown default: style = "?"
+            }
+            print("alert style: \(style)")
+            if settings.alertSetting == .disabled {
+                print("alerts: OFF — enable 'Show as banners' for Peel in System Settings")
+            }
+            if settings.soundSetting == .disabled {
+                print("sound: off (chime won't play)")
+            }
         }
 
         var pending: [UNNotificationRequest] = []
@@ -172,13 +191,27 @@ public enum CLI {
                 print("  \(item.date.map(f.string(from:)) ?? "…")  \(item.body)")
             }
         }
+        var delivered: [UNNotification] = []
+        center.getDeliveredNotifications { notifications in
+            delivered = notifications
+            semaphore.signal()
+        }
+        semaphore.wait()
+        if !delivered.isEmpty {
+            let f = DateFormatter()
+            f.dateFormat = "h:mm a"
+            print("recently delivered (in Notification Center):")
+            for n in delivered.sorted(by: { $0.date > $1.date }).prefix(5) {
+                print("  \(f.string(from: n.date))  \(n.request.content.body)")
+            }
+        }
         print("also check: a Focus / Do Not Disturb mode silences banners even when allowed.")
         return 0
     }
 
     /// Remote-controls the running app over a distributed notification.
     private static func ui(_ command: String?) -> Int32 {
-        let known = ["toggle", "new", "search", "show-all", "hide-all", "help", "clip"]
+        let known = ["toggle", "new", "search", "show-all", "hide-all", "help", "clip", "shelf"]
         guard let command, known.contains(command) else {
             fputs("usage: peel ui <\(known.joined(separator: "|"))>\n", stderr)
             return 1

@@ -26,6 +26,7 @@ To start Peel at login: System Settings → General → Login Items → add Peel
 | --- | --- |
 | ⌘⇧Space | Summon the latest sticky / focus it / press again to hide all |
 | ⌃⌥V | New sticky from the clipboard (text, image, or files) |
+| Bottom screen edge | The shelf: tabs for every note slide up; click to open |
 
 **In a sticky** — when no sticky is focused, your apps see nothing.
 
@@ -45,6 +46,13 @@ To start Peel at login: System Settings → General → Login Items → add Peel
 
 Typing `/` on an empty line opens the command menu — type to filter, return or
 click to apply. Every slash command lives there.
+
+**Formatting** is live markdown: `**bold**` (⌘B), `*italic*` (⌘I),
+`` `code` `` (⌘E), `~~strike~~` (⌘⇧X), `==highlight==` (⌘⇧H), `#` headings.
+The shortcuts toggle-wrap the selection or the word at the caret; markers stay
+visible but dimmed, and the file on disk is always plain markdown. The first
+line of every note renders as its header — it's the note's name on the shelf,
+in search, and in `peel list`.
 
 **Typing** — `[]` + space starts a todo, `-` + space a bullet, Enter continues
 lists (Enter on an empty item ends the list), ``` fences render as code, URLs

@@ -740,6 +740,16 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
             case "t": app.newSticky(); return true          // browser muscle memory: new "tab"
             case "w": hide(); return true                   // …and close it
             case "\u{1B}": app.hideAll(); return true       // ⌘esc — clear the desk
+            case "b": textView.toggleWrap("**"); return true
+            case "i": textView.toggleWrap("*"); return true
+            case "e": textView.toggleWrap("`"); return true
+            default: break
+            }
+        }
+        if modifiers == [.command, .shift] {
+            switch key {
+            case "x": textView.toggleWrap("~~"); return true
+            case "h": textView.toggleWrap("=="); return true
             default: break
             }
         }

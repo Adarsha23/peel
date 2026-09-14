@@ -43,6 +43,15 @@ final class NoteTextView: NSTextView {
         types: NSTextCheckingResult.CheckingType.link.rawValue)
     private static let tokenRegex = try? NSRegularExpression(pattern: Markup.tokenPattern)
 
+    // Inline markdown, styled live with the markers dimmed. Lookarounds keep
+    // *italic* from matching inside **bold**.
+    private static let boldRegex = try! NSRegularExpression(pattern: "\\*\\*([^*\\n]+)\\*\\*")
+    private static let italicRegex = try! NSRegularExpression(pattern: "(?<!\\*)\\*([^*\\n]+)\\*(?!\\*)")
+    private static let underscoreRegex = try! NSRegularExpression(pattern: "(?<![\\w_])_([^_\\n]+)_(?![\\w_])")
+    private static let codeSpanRegex = try! NSRegularExpression(pattern: "`([^`\\n]+)`")
+    private static let strikeRegex = try! NSRegularExpression(pattern: "~~([^~\\n]+)~~")
+    private static let highlightRegex = try! NSRegularExpression(pattern: "==([^=\\n]+)==")
+
     func configure() {
         isRichText = true
         importsGraphics = false
@@ -100,6 +109,7 @@ final class NoteTextView: NSTextView {
 
         remindTokens = []
         var inFence = false
+        var seenTitleLine = false
         var lineStart = 0
         while lineStart < ns.length {
             var lineEnd = 0
@@ -123,8 +133,18 @@ final class NoteTextView: NSTextView {
             }
             if trimmed.hasPrefix("# ") || trimmed.hasPrefix("## ") {
                 storage.addAttribute(.font, value: Theme.headingFont, range: lineRange)
+                seenTitleLine = true
                 continue
             }
+            // The first line is the note's header — it names the sticky
+            // everywhere (shelf tabs, search, peel list), so render it as one.
+            if !seenTitleLine, !trimmed.isEmpty {
+                seenTitleLine = true
+                if !trimmed.hasPrefix("![") {
+                    storage.addAttribute(.font, value: Theme.boldFont, range: lineRange)
+                }
+            }
+            styleInline(storage, in: lineRange)
 
             let indentLength = line.prefix { $0 == " " || $0 == "\t" }.count
             let glyphLocation = lineStart + indentLength
@@ -220,6 +240,80 @@ final class NoteTextView: NSTextView {
         }
         storage.endEditing()
         typingAttributes = baseAttributes
+    }
+
+    private func styleInline(_ storage: NSTextStorage, in lineRange: NSRange) {
+        func apply(_ regex: NSRegularExpression, markerLength: Int,
+                   _ style: (NSRange) -> Void) {
+            regex.enumerateMatches(in: string, range: lineRange) { match, _, _ in
+                guard let match else { return }
+                style(match.range(at: 1))
+                let dim = NSColor.tertiaryLabelColor
+                storage.addAttribute(.foregroundColor, value: dim,
+                                     range: NSRange(location: match.range.location, length: markerLength))
+                storage.addAttribute(.foregroundColor, value: dim,
+                                     range: NSRange(location: match.range.upperBound - markerLength,
+                                                    length: markerLength))
+            }
+        }
+        apply(NoteTextView.boldRegex, markerLength: 2) {
+            storage.addAttribute(.font, value: Theme.boldFont, range: $0)
+        }
+        // .obliqueness instead of an italic font: SF Rounded has no italic face.
+        apply(NoteTextView.italicRegex, markerLength: 1) {
+            storage.addAttribute(.obliqueness, value: 0.18, range: $0)
+        }
+        apply(NoteTextView.underscoreRegex, markerLength: 1) {
+            storage.addAttribute(.obliqueness, value: 0.18, range: $0)
+        }
+        apply(NoteTextView.strikeRegex, markerLength: 2) {
+            storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: $0)
+        }
+        apply(NoteTextView.highlightRegex, markerLength: 2) {
+            storage.addAttribute(.backgroundColor, value: accent.withAlphaComponent(0.28), range: $0)
+        }
+        apply(NoteTextView.codeSpanRegex, markerLength: 1) {
+            storage.addAttribute(.font, value: Theme.monoFont, range: $0)
+            storage.addAttribute(.backgroundColor,
+                                 value: NSColor.labelColor.withAlphaComponent(0.06), range: $0)
+        }
+    }
+
+    /// ⌘B/⌘I/⌘E/… — wrap the selection (or the word at the caret) in a markdown
+    /// marker; if it's already wrapped, unwrap. With nothing under the caret,
+    /// inserts the pair and parks the caret between them.
+    func toggleWrap(_ marker: String) {
+        let ns = string as NSString
+        var range = selectedRange()
+        if range.length == 0 {
+            let word = selectionRange(forProposedRange: range, granularity: .selectByWord)
+            if !ns.substring(with: word).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                range = word
+            }
+        }
+        let markerLength = (marker as NSString).length
+        let text = ns.substring(with: range)
+
+        if text.hasPrefix(marker), text.hasSuffix(marker),
+           (text as NSString).length >= 2 * markerLength {
+            let inner = (text as NSString).substring(
+                from: markerLength).dropLast(marker.count)
+            replaceRange(range, with: String(inner))
+            setSelectedRange(NSRange(location: range.location, length: (String(inner) as NSString).length))
+            return
+        }
+        if range.location >= markerLength, range.upperBound + markerLength <= ns.length,
+           ns.substring(with: NSRange(location: range.location - markerLength, length: markerLength)) == marker,
+           ns.substring(with: NSRange(location: range.upperBound, length: markerLength)) == marker {
+            let outer = NSRange(location: range.location - markerLength,
+                                length: range.length + 2 * markerLength)
+            replaceRange(outer, with: text)
+            setSelectedRange(NSRange(location: outer.location, length: range.length))
+            return
+        }
+        replaceRange(range, with: marker + text + marker)
+        setSelectedRange(NSRange(location: range.location + markerLength,
+                                 length: (text as NSString).length))
     }
 
     func insertPlain(_ text: String, at index: Int?) {

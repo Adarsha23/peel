@@ -55,6 +55,7 @@ enum Theme {
     }
 
     static let bodyFont = rounded(13)
+    static let boldFont = rounded(13, weight: .semibold)
     static let headingFont = rounded(15, weight: .semibold)
     static let monoFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
 
