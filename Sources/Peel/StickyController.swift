@@ -317,6 +317,57 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
 
     func noteHide() { hide() }
 
+    /// Slash commands. Actions run async so the command line is erased first —
+    /// archive/hide would otherwise persist the note with "/archive" still in it.
+    func noteCommand(_ command: String) -> Bool {
+        let run: () -> Void
+        switch command {
+        case "help", "?": run = { [weak self] in self?.app.showHelp() }
+        case "new": run = { [weak self] in self?.app.newSticky() }
+        case "search", "find": run = { [weak self] in self?.app.showSearch() }
+        case "hide": run = { [weak self] in self?.hide() }
+        case "behind", "park", "front", "float": run = { [weak self] in self?.toggleLayer() }
+        case "archive", "done": run = { [weak self] in self?.archive() }
+        case "shot", "screenshot": run = { [weak self] in self?.captureScreenshot() }
+        case "date":
+            run = { [weak self] in self?.textView.insertPlain(Self.slashDate.string(from: Date()), at: nil) }
+        case "time":
+            run = { [weak self] in self?.textView.insertPlain(Self.slashTime.string(from: Date()), at: nil) }
+        case "copy":
+            run = { [weak self] in
+                guard let self else { return }
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(
+                    Markup.markdown(fromDisplay: self.textView.string, noteID: self.note.id),
+                    forType: .string)
+            }
+        case "open", "folder":
+            run = { [weak self] in
+                guard let self else { return }
+                NSWorkspace.shared.activateFileViewerSelecting([self.store.fileURL(for: self.note.id)])
+            }
+        default:
+            guard Theme.palettes.contains(where: { $0.name == command }) else { return false }
+            run = { [weak self] in self?.setColor(command) }
+        }
+        DispatchQueue.main.async(execute: run)
+        return true
+    }
+
+    private static let slashDate: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd EEE"
+        return f
+    }()
+
+    private static let slashTime: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
     private func nextIndexedName(prefix: String) -> String {
         let existing = Set(store.attachments(for: note.id).map(\.lastPathComponent))
         var n = 1

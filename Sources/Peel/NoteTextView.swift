@@ -6,6 +6,8 @@ protocol NoteTextViewDelegate: AnyObject {
     func noteAttachFiles(_ urls: [URL], at index: Int?)
     func noteAttachImageData(_ data: Data, at index: Int?)
     func noteHide()
+    /// A /command typed alone on a line + return. True = handled (line is erased).
+    func noteCommand(_ command: String) -> Bool
 }
 
 /// A plain-text-first editor with live glyph styling:
@@ -233,6 +235,18 @@ final class NoteTextView: NSTextView {
         let line = ns.substring(with: NSRange(location: lineStart, length: contentsEnd - lineStart))
         let indent = String(line.prefix { $0 == " " || $0 == "\t" })
         let content = String(line.dropFirst(indent.count))
+
+        // Slash commands: "/help" + return runs the command and erases the line.
+        let trimmed = content.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("/"), trimmed.count > 1, !trimmed.contains(" "),
+           noteDelegate?.noteCommand(String(trimmed.dropFirst()).lowercased()) == true {
+            let lineRange = NSRange(location: lineStart, length: contentsEnd - lineStart)
+            if shouldChangeText(in: lineRange, replacementString: "") {
+                replaceCharacters(in: lineRange, with: "")
+                didChangeText()
+            }
+            return
+        }
 
         func endOrContinueList(marker: String, nextMarker: String, rest: Substring) {
             if rest.trimmingCharacters(in: .whitespaces).isEmpty {

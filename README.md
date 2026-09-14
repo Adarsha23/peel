@@ -44,6 +44,20 @@ terminal muscle memory. When no sticky is focused, your apps see nothing.
 lists (Enter on an empty item ends the list), ``` fences render as code, URLs
 are clickable. Paste is always plain text.
 
+**Slash commands** — type on an empty line and press return; the command
+erases itself and runs:
+
+| Command | Action |
+| --- | --- |
+| `/help` | Floating shortcut cheatsheet |
+| `/new` `/search` | New sticky · search |
+| `/hide` `/behind` | Hide · push behind / bring forward |
+| `/archive` `/shot` | Archive · screenshot into note |
+| `/date` `/time` | Insert `2026-09-14 Sun` · `14:32` |
+| `/copy` | Copy the whole note as markdown |
+| `/open` | Reveal the note file in Finder |
+| `/yellow` … `/graphite` | Any palette name changes the color |
+
 **Images & files** — paste or drop an image and it's saved to the note's
 attachment folder and referenced inline right where your cursor/drop was, as a
 clickable `⟦image-1.png⟧` tag (click to view). On disk that's a standard

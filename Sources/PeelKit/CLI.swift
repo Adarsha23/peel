@@ -99,7 +99,7 @@ public enum CLI {
 
     /// Remote-controls the running app over a distributed notification.
     private static func ui(_ command: String?) -> Int32 {
-        let known = ["toggle", "new", "search", "show-all", "hide-all"]
+        let known = ["toggle", "new", "search", "show-all", "hide-all", "help"]
         guard let command, known.contains(command) else {
             fputs("usage: peel ui <\(known.joined(separator: "|"))>\n", stderr)
             return 1

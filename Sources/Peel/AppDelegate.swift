@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastPollStamp = Date.distantPast
     private var lastPollCount = -1
     private lazy var search = SearchController(app: self)
+    private let help = HelpController()
     private var colorRotation = 0
 
     // MARK: Lifecycle
@@ -82,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "search": showSearch()
         case "show-all": showAll()
         case "hide-all": hideAll()
+        case "help": showHelp()
         default: break
         }
     }
@@ -143,6 +145,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func showSearch() { search.toggle() }
+
+    @objc func showHelp() { help.toggle() }
 
     @objc func showAll() {
         for note in store.loadAll() { reveal(id: note.id, focus: false) }
@@ -258,7 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(menuItem("Screenshot → Sticky", #selector(screenshotToSticky), ""))
         menu.addItem(menuItem("Open Notes Folder", #selector(openNotesFolder), ""))
-        menu.addItem(menuItem("Keyboard Shortcuts", #selector(showShortcuts), ""))
+        menu.addItem(menuItem("Keyboard Shortcuts", #selector(showHelp), ""))
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit Peel", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)
@@ -296,29 +300,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = main
     }
 
-    @objc private func showShortcuts() {
-        let alert = NSAlert()
-        alert.messageText = "Peel Shortcuts"
-        alert.informativeText = """
-        Global
-        ⌘⇧Space   show / focus / hide stickies
-
-        In a sticky (⌃⌥ so nothing collides with your apps)
-        esc   hide               ⌘↩   toggle todo
-        ⌃⌥N   new sticky         ⌃⌥F   search
-        ⌃⌥B   push behind / bring forward
-        ⌃⌥S   screenshot into note
-        ⌃⌥A   archive note       ⌃⌥1–7 change color
-        [] + space starts a todo, - + space a bullet
-        Click a ⟦image⟧ tag to open it
-
-        Terminal
-        peel · peel new · peel list · peel search · peel today
-
-        Remap in \(store.root.path)/config.json
-        """
-        alert.alertStyle = .informational
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
-    }
 }
