@@ -33,7 +33,8 @@ public enum CLI {
         for note in notes {
             let todos = note.todoCounts
             let todoTag = todos.open + todos.done > 0 ? "  [\(todos.done)/\(todos.open + todos.done)]" : ""
-            let age = (note.updated.shortAge + " ago").padding(toLength: 8, withPad: " ", startingAt: 0)
+            let raw = note.updated.shortAge
+            let age = (raw == "now" ? raw : raw + " ago").padding(toLength: 8, withPad: " ", startingAt: 0)
             print("\(note.id)  \(age)\(todoTag)  \(note.title)")
         }
         return 0
