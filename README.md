@@ -25,20 +25,26 @@ To start Peel at login: System Settings → General → Login Items → add Peel
 | Key | Action |
 | --- | --- |
 | ⌘⇧Space | Summon the latest sticky / focus it / press again to hide all |
+| ⌃⌥V | New sticky from the clipboard (text, image, or files) |
 
-**In a sticky** — commands use ⌃⌥ so they never collide with your browser or
-terminal muscle memory. When no sticky is focused, your apps see nothing.
+**In a sticky** — when no sticky is focused, your apps see nothing.
 
 | Key | Action |
 | --- | --- |
-| esc | Hide the sticky |
+| esc / ⌘W | Hide the sticky |
+| ⌘esc | Hide all stickies |
+| ⌘T / ⌃⌥N | New sticky |
 | ⌘↩ | Toggle todo on the current line (or click the box) |
-| ⌃⌥N | New sticky |
+| ⌘⌫ | Delete to line start; at line start keeps eating upward |
+| Double-click header | Collapse the sticky to its first line / expand |
 | ⌃⌥F | Search notes |
 | ⌃⌥B | Push the sticky behind your windows / bring it back forward |
 | ⌃⌥S | Screenshot straight into the note |
 | ⌃⌥A | Archive the note |
 | ⌃⌥1–7 | Change color |
+
+Typing `/` on an empty line opens the command menu — type to filter, return or
+click to apply. Every slash command lives there.
 
 **Typing** — `[]` + space starts a todo, `-` + space a bullet, Enter continues
 lists (Enter on an empty item ends the list), ``` fences render as code, URLs
@@ -94,6 +100,15 @@ peel archive <id>     # archive (never deletes)
 peel path             # print the data directory
 peel ui <cmd>         # control the running app: toggle|new|search|show-all|hide-all
 ```
+
+**Screenshots are searchable** — every image attachment is OCR'd on-device
+(Apple's Vision framework, fully offline) into a hidden
+`attachments/<id>/.ocr/` sidecar. `peel search "that error message"` finds the
+screenshot containing it.
+
+**Nothing is ever lost** — the data directory silently git-commits itself at
+launch and every 6 hours, and "Start at Login" in the menu bar keeps Peel
+always available.
 
 ## Where notes live
 

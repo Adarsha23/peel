@@ -178,7 +178,7 @@ public enum CLI {
 
     /// Remote-controls the running app over a distributed notification.
     private static func ui(_ command: String?) -> Int32 {
-        let known = ["toggle", "new", "search", "show-all", "hide-all", "help"]
+        let known = ["toggle", "new", "search", "show-all", "hide-all", "help", "clip"]
         guard let command, known.contains(command) else {
             fputs("usage: peel ui <\(known.joined(separator: "|"))>\n", stderr)
             return 1
@@ -213,7 +213,7 @@ public enum CLI {
           peel today            print every note touched today (markdown)
           peel archive <id>     archive a note
           peel path             print the data directory
-          peel ui <cmd>         control the running app: toggle|new|search|show-all|hide-all
+          peel ui <cmd>         control the running app: toggle|new|search|show-all|hide-all|help|clip
 
         data lives in ~/Library/Application Support/Peel (override: PEEL_DATA_DIR)
         """)

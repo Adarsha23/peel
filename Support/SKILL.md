@@ -40,6 +40,13 @@ filename or directory listing — the surrounding text is each screenshot's
 context. Files in `attachments/<id>/` without an inline reference are still
 attachments of that note (its strip shows them); their order is creation time.
 
+### OCR sidecars
+
+Every image attachment gets on-device OCR; the extracted text lives at
+`attachments/<id>/.ocr/<filename>.txt`. `peel search` already includes it, and
+grepping the `.ocr` folders is the fast way to find a screenshot by its
+contents without opening images.
+
 ## Body conventions
 
 - `- [ ] task` / `- [x] done` — todo state lives in the markdown; editing it updates the sticky

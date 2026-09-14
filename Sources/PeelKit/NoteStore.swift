@@ -112,6 +112,7 @@ public final class NoteStore {
             } else {
                 try FileManager.default.copyItem(at: source, to: dest)
             }
+            OCR.index(dest)
             return dest
         } catch {
             return nil
@@ -129,7 +130,9 @@ public final class NoteStore {
             dest = dir.appendingPathComponent(ext.isEmpty ? "\(base)-\(counter)" : "\(base)-\(counter).\(ext)")
             counter += 1
         }
-        do { try data.write(to: dest); return dest } catch { return nil }
+        do { try data.write(to: dest) } catch { return nil }
+        OCR.index(dest)
+        return dest
     }
 
     // MARK: Search
@@ -141,7 +144,10 @@ public final class NoteStore {
         let notes = candidates ?? loadAll()
         return notes.filter { note in
             var hay = note.body.lowercased() + " " + note.id.lowercased()
-            for url in attachments(for: note.id) { hay += " " + url.lastPathComponent.lowercased() }
+            for url in attachments(for: note.id) {
+                hay += " " + url.lastPathComponent.lowercased()
+                if let ocr = OCR.text(for: url) { hay += " " + ocr.lowercased() } // screenshots are searchable
+            }
             return tokens.allSatisfy { hay.contains($0) }
         }
     }

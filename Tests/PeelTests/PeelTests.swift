@@ -156,6 +156,22 @@ final class StoreTests {
         #expect(store.search("authentication grocery").isEmpty) // AND semantics
     }
 
+    @Test func searchFindsOCRSidecarText() throws {
+        var note = Note(body: "empty note")
+        store.save(&note)
+        let image = store.attachmentsDir(for: note.id, create: true)
+            .appendingPathComponent("shot.png")
+        try Data("fake".utf8).write(to: image)
+        let sidecar = OCR.sidecarURL(for: image)
+        try FileManager.default.createDirectory(at: sidecar.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try "NSPanel error dialog contents".write(to: sidecar, atomically: true, encoding: .utf8)
+
+        #expect(store.search("nspanel dialog").map(\.id) == [note.id])
+        // hidden .ocr folder must never appear as an attachment
+        #expect(store.attachments(for: note.id).map(\.lastPathComponent) == ["shot.png"])
+    }
+
     @Test func resolveByPrefix() {
         var note = Note(body: "findable")
         store.save(&note)

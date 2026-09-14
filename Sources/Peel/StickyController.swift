@@ -51,6 +51,7 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
         header.onHide = { [weak self] in self?.hide() }
         header.onNew = { [weak self] in self?.app.newSticky() }
         header.onMenu = { [weak self] button in self?.showContextMenu(from: button) }
+        header.onCollapse = { [weak self] in self?.toggleCollapse() }
 
         let scroll = NSScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
@@ -158,6 +159,27 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
         if focus { focusText() }
     }
 
+    /// Double-click the header — roll the sticky up to just its first line.
+    private var expandedFrame: NSRect?
+    var isCollapsed: Bool { expandedFrame != nil }
+
+    func toggleCollapse() {
+        if let full = expandedFrame {
+            expandedFrame = nil
+            var frame = panel.frame
+            frame.origin.y = frame.maxY - full.height
+            frame.size = full.size
+            panel.setFrame(frame, display: true, animate: true)
+        } else {
+            expandedFrame = panel.frame
+            var frame = panel.frame
+            let collapsedHeight: CGFloat = 62
+            frame.origin.y += frame.height - collapsedHeight
+            frame.size.height = collapsedHeight
+            panel.setFrame(frame, display: true, animate: true)
+        }
+    }
+
     /// ⌃⌥B — park the sticky behind normal windows / bring it back above them.
     func toggleLayer() {
         note.sunk ? floatUp() : sinkBehind()
@@ -242,6 +264,14 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
     }
 
     private func captureFrame() {
+        if let full = expandedFrame {
+            // Collapsed: persist the expanded geometry at the current position.
+            note.x = panel.frame.origin.x
+            note.y = panel.frame.maxY - full.height
+            note.width = full.width
+            note.height = full.height
+            return
+        }
         note.x = panel.frame.origin.x
         note.y = panel.frame.origin.y
         note.width = panel.frame.width
@@ -307,6 +337,7 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
             textView.insertPlain(tokens.joined(separator: " ") + " ", at: index)
         }
         reloadAttachments()
+        focusAfterAttach()
     }
 
     func noteAttachImageData(_ data: Data, at index: Int?) {
@@ -314,6 +345,19 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
                                         to: note.id) else { return }
         textView.insertPlain("⟦\(stored.lastPathComponent)⟧ ", at: index)
         reloadAttachments()
+        focusAfterAttach()
+    }
+
+    func appendClipboardText(_ text: String) {
+        textView.insertPlain(text, at: nil)
+        focusAfterAttach()
+    }
+
+    /// After a drop/paste/capture lands, keyboard focus belongs in the sticky
+    /// with the caret right after what just arrived.
+    private func focusAfterAttach() {
+        panel.makeKey()
+        panel.makeFirstResponder(textView)
     }
 
     func noteHide() { hide() }
@@ -346,6 +390,14 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
         case "behind", "park", "front", "float": run = { [weak self] in self?.toggleLayer() }
         case "archive", "done": run = { [weak self] in self?.archive() }
         case "shot", "screenshot": run = { [weak self] in self?.captureScreenshot() }
+        case "todo": run = { [weak self] in self?.textView.toggleTodo(nil) }
+        case "code":
+            run = { [weak self] in
+                guard let self else { return }
+                let start = self.textView.selectedRange().location
+                self.textView.insertPlain("```\n\n```", at: nil)
+                self.textView.setSelectedRange(NSRange(location: start + 4, length: 0))
+            }
         case "remind", "reminder":
             run = { [weak self] in self?.showRemindPicker(target: .newLine) }
         case "date":
@@ -421,11 +473,85 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
         hint.isEnabled = false
         menu.addItem(hint)
 
-        let anchorRange = anchor ?? textView.selectedRange()
-        let screenRect = textView.firstRect(forCharacterRange: anchorRange, actualRange: nil)
+        popup(menu, atCharacter: (anchor ?? textView.selectedRange()).location)
+    }
+
+    private func popup(_ menu: NSMenu, atCharacter location: Int) {
+        let range = NSRange(location: max(0, location), length: 1)
+        let screenRect = textView.firstRect(forCharacterRange: range, actualRange: nil)
         let windowPoint = panel.convertPoint(fromScreen: NSPoint(x: screenRect.minX, y: screenRect.minY))
         let viewPoint = textView.convert(windowPoint, from: nil)
         menu.popUp(positioning: nil, at: viewPoint, in: textView)
+    }
+
+    // MARK: Slash autocomplete — type "/" on an empty line, pick a command.
+    // Type-to-filter works (NSMenu type-select); esc leaves the "/" for manual typing.
+
+    private var pendingSlashLocation: Int?
+
+    func noteSlashTyped(slashAt location: Int) {
+        pendingSlashLocation = location
+        DispatchQueue.main.async { [weak self] in self?.showSlashMenu(at: location) }
+    }
+
+    private func showSlashMenu(at location: Int) {
+        let menu = NSMenu()
+        func add(_ verb: String, _ hint: String, to target: NSMenu = menu) {
+            let item = NSMenuItem(title: verb, action: #selector(slashPicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = verb
+            let title = NSMutableAttributedString(string: verb, attributes: [
+                .font: NSFont.menuFont(ofSize: 13),
+            ])
+            title.append(NSAttributedString(string: "   \(hint)", attributes: [
+                .font: NSFont.menuFont(ofSize: 11),
+                .foregroundColor: NSColor.tertiaryLabelColor,
+            ]))
+            item.attributedTitle = title
+            target.addItem(item)
+        }
+        add("remind", "notification at a time")
+        add("todo", "make this line a todo")
+        add("code", "code block")
+        add("date", "insert today's date")
+        add("time", "insert the time")
+        menu.addItem(.separator())
+        add("shot", "screenshot into the note")
+        add("copy", "copy note as markdown")
+        let colorItem = NSMenuItem(title: "color", action: nil, keyEquivalent: "")
+        let colors = NSMenu()
+        for palette in Theme.palettes {
+            let item = NSMenuItem(title: palette.name, action: #selector(slashPicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = palette.name
+            item.image = Theme.swatch(palette)
+            if palette.name == note.color { item.state = .on }
+            colors.addItem(item)
+        }
+        colorItem.submenu = colors
+        menu.addItem(colorItem)
+        menu.addItem(.separator())
+        add("new", "new sticky")
+        add("search", "search notes")
+        add(note.sunk ? "front" : "behind", note.sunk ? "bring forward" : "push behind windows")
+        add("hide", "hide this sticky")
+        add("archive", "archive this note")
+        menu.addItem(.separator())
+        add("open", "show note file in Finder")
+        add("help", "shortcut cheatsheet")
+        popup(menu, atCharacter: location)
+    }
+
+    @objc private func slashPicked(_ sender: NSMenuItem) {
+        guard let verb = sender.representedObject as? String else { return }
+        if let location = pendingSlashLocation {
+            pendingSlashLocation = nil
+            let ns = textView.string as NSString
+            if location < ns.length, ns.character(at: location) == 0x2F {
+                textView.replaceRange(NSRange(location: location, length: 1), with: "")
+            }
+        }
+        _ = noteCommand(verb)
     }
 
     @objc private func remindOptionPicked(_ sender: NSMenuItem) {
@@ -524,6 +650,7 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
         let dest = store.attachmentsDir(for: note.id, create: true)
             .appendingPathComponent(nextIndexedName(prefix: "screenshot"))
         let wasVisible = panel.isVisible
+        let caret = textView.selectedRange() // token goes back where you were typing
         if wasVisible { panel.orderOut(nil) } // don't photobomb your own screenshot
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
@@ -533,7 +660,10 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
                 guard let self else { return }
                 if wasVisible { self.show(focus: false) }
                 if FileManager.default.fileExists(atPath: dest.path) {
+                    let length = (self.textView.string as NSString).length
+                    self.textView.setSelectedRange(NSRange(location: min(caret.location, length), length: 0))
                     self.textView.insertPlain("⟦\(dest.lastPathComponent)⟧ ", at: nil)
+                    self.focusAfterAttach()
                 }
                 self.reloadAttachments()
             }
@@ -604,9 +734,14 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let key = (event.charactersIgnoringModifiers ?? "").lowercased()
 
-        if modifiers == .command, key == "\r" {
-            textView.toggleTodo(nil)
-            return true
+        if modifiers == .command {
+            switch key {
+            case "\r": textView.toggleTodo(nil); return true
+            case "t": app.newSticky(); return true          // browser muscle memory: new "tab"
+            case "w": hide(); return true                   // …and close it
+            case "\u{1B}": app.hideAll(); return true       // ⌘esc — clear the desk
+            default: break
+            }
         }
         guard modifiers == [.control, .option] else { return false }
         switch key {
@@ -652,6 +787,7 @@ final class HeaderView: NSView {
     var onHide: (() -> Void)?
     var onNew: (() -> Void)?
     var onMenu: ((NSView) -> Void)?
+    var onCollapse: (() -> Void)?
     var dotColor: NSColor = .controlAccentColor { didSet { dotButton.image = dotImage() } }
 
     private let hideButton = HeaderView.symbolButton("xmark", size: 9)
@@ -720,6 +856,10 @@ final class HeaderView: NSView {
     @objc private func menuPressed() { onMenu?(dotButton) }
 
     override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            onCollapse?()
+            return
+        }
         window?.performDrag(with: event)
     }
 

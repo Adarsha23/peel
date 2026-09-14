@@ -1,10 +1,12 @@
 import AppKit
 import PeelKit
+import ServiceManagement
 
 struct Config: Codable {
     var toggleHotkey: String?
     var newNoteHotkey: String?
     var searchHotkey: String?
+    var clipHotkey: String?
 
     static func load(from root: URL) -> Config {
         let url = root.appendingPathComponent("config.json")
@@ -14,7 +16,8 @@ struct Config: Codable {
         }
         // newNote/search stay local-only (⌃⌥N / ⌃⌥F inside a sticky) unless the
         // user opts into global specs here, e.g. "ctrl+opt+n".
-        let config = Config(toggleHotkey: "cmd+shift+space", newNoteHotkey: nil, searchHotkey: nil)
+        let config = Config(toggleHotkey: "cmd+shift+space", newNoteHotkey: nil,
+                            searchHotkey: nil, clipHotkey: "ctrl+opt+v")
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         if let data = try? encoder.encode(config) { try? data.write(to: url) }
@@ -37,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var search = SearchController(app: self)
     private let help = HelpController()
     private var colorRotation = 0
+    private var gitTimer: Timer?
 
     // MARK: Lifecycle
 
@@ -66,6 +70,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            let hotkey = HotKey(spec: spec, handler: { [weak self] in self?.showSearch() }) {
             hotkeys.append(hotkey)
         }
+        if let hotkey = HotKey(spec: config.clipHotkey ?? "ctrl+opt+v",
+                               handler: { [weak self] in self?.clipCapture() }) {
+            hotkeys.append(hotkey)
+        }
+
+        ocrCatchUp()
+        gitSnapshot()
+        gitTimer = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
+            self?.gitSnapshot()
+        }
 
         startWatcher()
         reminders.activate()
@@ -84,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "show-all": showAll()
         case "hide-all": hideAll()
         case "help": showHelp()
+        case "clip": clipCapture()
         default: break
         }
     }
@@ -135,13 +150,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.show(focus: focus)
     }
 
-    @objc func newSticky() {
+    @discardableResult
+    @objc func newSticky() -> StickyController {
         var note = Note(color: Theme.palettes[colorRotation % 6].name) // graphite stays opt-in
         colorRotation += 1
         store.save(&note)
         let controller = StickyController(note: note, app: self)
         controllers[note.id] = controller
         controller.show(focus: true)
+        return controller
+    }
+
+    /// ⌃⌥V from anywhere: whatever is on the clipboard becomes a new sticky —
+    /// image, files, or text — without touching the app first.
+    func clipCapture() {
+        let pasteboard = NSPasteboard.general
+        let controller = newSticky()
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self],
+                                             options: [.urlReadingFileURLsOnly: true]) as? [URL],
+           !urls.isEmpty {
+            controller.noteAttachFiles(urls, at: 0)
+        } else if pasteboard.string(forType: .string) == nil,
+                  let data = NoteTextView.imageData(from: pasteboard) {
+            controller.noteAttachImageData(data, at: 0)
+        } else if let text = pasteboard.string(forType: .string) {
+            controller.appendClipboardText(text)
+        }
     }
 
     @objc func showSearch() { search.toggle() }
@@ -162,6 +196,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func openNotesFolder() {
         NSWorkspace.shared.open(store.root)
+    }
+
+    @objc private func toggleLoginItem(_ sender: NSMenuItem) {
+        let service = SMAppService.mainApp
+        if service.status == .enabled {
+            try? service.unregister()
+        } else {
+            try? service.register()
+        }
+        sender.state = service.status == .enabled ? .on : .off
+    }
+
+    /// Notes are just files — a silent git snapshot means no thought is ever lost.
+    /// ponytail: full snapshot every 6h, not per-save; the debounced saves make
+    /// per-change commits noisy for zero recovery value.
+    private func gitSnapshot() {
+        let root = store.root.path
+        DispatchQueue.global(qos: .utility).async {
+            let git = "/usr/bin/git"
+            guard FileManager.default.fileExists(atPath: git) else { return }
+            func run(_ args: [String]) {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: git)
+                process.arguments = ["-C", root] + args
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+                try? process.run()
+                process.waitUntilExit()
+            }
+            if !FileManager.default.fileExists(atPath: root + "/.git") { run(["init", "-q"]) }
+            run(["add", "-A"])
+            run(["commit", "-q", "-m", "peel snapshot"])
+        }
+    }
+
+    /// OCR any attachment that predates the OCR feature (or arrived externally).
+    private func ocrCatchUp() {
+        let store = self.store
+        DispatchQueue.global(qos: .utility).async {
+            for note in store.loadAll(includeArchived: true) {
+                for url in store.attachments(for: note.id) { OCR.index(url) }
+            }
+        }
     }
 
     func stickyWasArchived(id: String) {
@@ -229,6 +306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var seen = Set<String>()
         for note in store.loadAll() {
             seen.insert(note.id)
+            reminders.sync(note: note) // external edits (CLI, agents) must schedule too
             if let controller = controllers[note.id] {
                 controller.externalUpdate(note)
             } else if note.open {
@@ -264,6 +342,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(menuItem("Screenshot → Sticky", #selector(screenshotToSticky), ""))
         menu.addItem(menuItem("Open Notes Folder", #selector(openNotesFolder), ""))
         menu.addItem(menuItem("Keyboard Shortcuts", #selector(showHelp), ""))
+        menu.addItem(.separator())
+        let loginItem = menuItem("Start at Login", #selector(toggleLoginItem(_:)), "")
+        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        menu.addItem(loginItem)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit Peel", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit)

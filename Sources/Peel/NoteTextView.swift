@@ -10,6 +10,8 @@ protocol NoteTextViewDelegate: AnyObject {
     func noteCommand(_ command: String) -> Bool
     /// Click on an @remind token — open the time picker.
     func noteRemindClicked(tokenRange: NSRange, dateRange: NSRange?)
+    /// "/" typed on an empty line — show the command menu.
+    func noteSlashTyped(slashAt location: Int)
 }
 
 /// A plain-text-first editor with live glyph styling:
@@ -247,6 +249,42 @@ final class NoteTextView: NSTextView {
         restyle()
         needsDisplay = true
         noteDelegate?.noteTextDidChange()
+        maybeAnnounceSlash()
+    }
+
+    /// ⌘⌫ repeatedly eats lines upward: at the start of a line it deletes the
+    /// newline (joining with the previous line) instead of being a no-op.
+    override func deleteToBeginningOfLine(_ sender: Any?) {
+        let selection = selectedRange()
+        let ns = string as NSString
+        if selection.length == 0, selection.location > 0 {
+            var lineStart = 0
+            ns.getLineStart(&lineStart, end: nil, contentsEnd: nil,
+                            for: NSRange(location: selection.location, length: 0))
+            if selection.location == lineStart {
+                let joinRange = NSRange(location: selection.location - 1, length: 1)
+                if shouldChangeText(in: joinRange, replacementString: "") {
+                    replaceCharacters(in: joinRange, with: "")
+                    didChangeText()
+                }
+                return
+            }
+        }
+        super.deleteToBeginningOfLine(sender)
+    }
+
+    private func maybeAnnounceSlash() {
+        let selection = selectedRange()
+        guard selection.length == 0, selection.location > 0 else { return }
+        let ns = string as NSString
+        guard ns.character(at: selection.location - 1) == 0x2F /* "/" */ else { return }
+        var lineStart = 0
+        ns.getLineStart(&lineStart, end: nil, contentsEnd: nil,
+                        for: NSRange(location: selection.location, length: 0))
+        let prefix = ns.substring(with: NSRange(location: lineStart,
+                                                length: selection.location - lineStart))
+        guard prefix.trimmingCharacters(in: .whitespaces) == "/" else { return }
+        noteDelegate?.noteSlashTyped(slashAt: selection.location - 1)
     }
 
     /// "[] " → "☐ ", "[x] " → "☑ ", "- " → "• " when typed at the start of a line.

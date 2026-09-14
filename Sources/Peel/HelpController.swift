@@ -90,11 +90,15 @@ final class HelpController: NSObject, NSWindowDelegate {
 
         section("GLOBAL")
         row("⌘⇧space", "show · focus · press again to hide")
+        row("⌃⌥V", "new sticky from whatever's on the clipboard")
 
         section("IN A STICKY")
-        row("esc", "hide sticky")
+        row("esc / ⌘W", "hide sticky")
+        row("⌘esc", "hide all stickies")
+        row("⌘T / ⌃⌥N", "new sticky")
         row("⌘return", "toggle todo on this line")
-        row("⌃⌥N", "new sticky")
+        row("⌘⌫", "delete line — repeats upward")
+        row("2×click header", "collapse / expand")
         row("⌃⌥F", "search notes")
         row("⌃⌥B", "push behind windows / bring back")
         row("⌃⌥S", "screenshot into note")
@@ -102,11 +106,12 @@ final class HelpController: NSObject, NSWindowDelegate {
         row("⌃⌥1–7", "change color")
 
         section("TYPING")
+        row("/", "on an empty line: command menu — type to filter, click to apply")
         row("[] + space", "todo")
         row("- + space", "bullet")
         row("``` … ```", "code block")
-        row("@remind", "click it to pick a time · orange = scheduled, red = no time found")
-        row("⟦image-1.png⟧", "click to view · drop/paste to add")
+        row("@remind", "click it to pick a time · orange = scheduled, red = check tooltip")
+        row("⟦image-1.png⟧", "click to view · drop/paste to add · text inside is searchable")
 
         section("SLASH — TYPE ON ITS OWN LINE + RETURN")
         row("/help", "this cheatsheet")
