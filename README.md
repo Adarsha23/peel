@@ -47,6 +47,13 @@ To start Peel at login: System Settings → General → Login Items → add Peel
 Typing `/` on an empty line opens the command menu — type to filter, return or
 click to apply. Every slash command lives there.
 
+**Idle life-cycle** — an untouched sticky fades to ~40% opacity after 4 s (the
+content underneath shows through), then minimizes into the shelf after 10 s
+with a Dock-style animation. Hovering or focusing restores it instantly;
+opening from the shelf expands out of its tab. Toggle with "Auto-tuck Idle
+Stickies" in the menu bar, or set `autoDockSeconds` in `config.json`
+(0 disables). Parked (⌃⌥B) stickies are exempt.
+
 **Formatting** is live markdown: `**bold**` (⌘B), `*italic*` (⌘I),
 `` `code` `` (⌘E), `~~strike~~` (⌘⇧X), `==highlight==` (⌘⇧H), `#` headings.
 The shortcuts toggle-wrap the selection or the word at the caret; markers stay

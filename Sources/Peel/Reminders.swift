@@ -126,16 +126,24 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
     }
 
     // MARK: UNUserNotificationCenterDelegate
+    // Completion-handler signatures, deliberately: if the async variants aren't
+    // bridged and invoked, macOS treats an active app's notification as
+    // "suppress the banner, file it quietly" — reminders vanish into
+    // Notification Center. These forms are always called.
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler:
+                                    @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound, .list])
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                didReceive response: UNNotificationResponse) async {
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
         if let noteID = response.notification.request.content.userInfo["noteID"] as? String {
-            await MainActor.run { reveal?(noteID) }
+            DispatchQueue.main.async { [weak self] in self?.reveal?(noteID) }
         }
+        completionHandler()
     }
 }

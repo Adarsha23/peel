@@ -55,9 +55,9 @@ final class ShelfController {
         stack.edgeInsets = NSEdgeInsets(top: 6, left: 8, bottom: 0, right: 8)
         for note in notes.prefix(12) {
             let alreadyVisible = app.controllers[note.id]?.panel.isVisible == true
-            stack.addArrangedSubview(ShelfTab(note: note, dimmed: alreadyVisible) { [weak self] id in
+            stack.addArrangedSubview(ShelfTab(note: note, dimmed: alreadyVisible) { [weak self] id, tabRect in
                 self?.hide()
-                self?.app.reveal(id: id, focus: true)
+                self?.app.reveal(id: id, focus: true, from: tabRect)
             })
         }
         let container = NSView()
@@ -109,10 +109,10 @@ final class ShelfController {
 /// One tab on the shelf: the note's paper color, its accent dot, its first line.
 private final class ShelfTab: NSView {
     private let noteID: String
-    private let onOpen: (String) -> Void
+    private let onOpen: (String, NSRect?) -> Void
     private let background: NSColor
 
-    init(note: Note, dimmed: Bool, onOpen: @escaping (String) -> Void) {
+    init(note: Note, dimmed: Bool, onOpen: @escaping (String, NSRect?) -> Void) {
         self.noteID = note.id
         self.onOpen = onOpen
         let palette = Theme.palette(note.color)
@@ -155,6 +155,8 @@ private final class ShelfTab: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        onOpen(noteID)
+        // the sticky expands out of this tab, Dock-style
+        let screenRect = window.map { $0.convertToScreen(convert(bounds, to: nil)) }
+        onOpen(noteID, screenRect)
     }
 }

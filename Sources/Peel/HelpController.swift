@@ -100,6 +100,7 @@ final class HelpController: NSObject, NSWindowDelegate {
         row("⌘return", "toggle todo on this line")
         row("⌘⌫", "delete line — repeats upward")
         row("2×click header", "collapse / expand")
+        row("idle sticky", "fades see-through after 4s, tucks into the shelf after 10s")
         row("⌃⌥F", "search notes")
         row("⌃⌥B", "push behind windows / bring back")
         row("⌃⌥S", "screenshot into note")

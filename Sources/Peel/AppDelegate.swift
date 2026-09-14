@@ -7,6 +7,7 @@ struct Config: Codable {
     var newNoteHotkey: String?
     var searchHotkey: String?
     var clipHotkey: String?
+    var autoDockSeconds: Double? // idle stickies tuck into the shelf; 0 disables
 
     static func load(from root: URL) -> Config {
         let url = root.appendingPathComponent("config.json")
@@ -17,11 +18,17 @@ struct Config: Codable {
         // newNote/search stay local-only (⌃⌥N / ⌃⌥F inside a sticky) unless the
         // user opts into global specs here, e.g. "ctrl+opt+n".
         let config = Config(toggleHotkey: "cmd+shift+space", newNoteHotkey: nil,
-                            searchHotkey: nil, clipHotkey: "ctrl+opt+v")
+                            searchHotkey: nil, clipHotkey: "ctrl+opt+v", autoDockSeconds: 10)
+        config.save(to: root)
+        return config
+    }
+
+    func save(to root: URL) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let data = try? encoder.encode(config) { try? data.write(to: url) }
-        return config
+        if let data = try? encoder.encode(self) {
+            try? data.write(to: root.appendingPathComponent("config.json"))
+        }
     }
 }
 
@@ -42,6 +49,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var shelf = ShelfController(app: self)
     private var colorRotation = 0
     private var gitTimer: Timer?
+    private var idleTimer: Timer?
+    private var config = Config()
 
     // MARK: Lifecycle
 
@@ -58,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             controller.show(focus: false)
         }
 
-        let config = Config.load(from: store.root)
+        config = Config.load(from: store.root)
         if let spec = config.toggleHotkey ?? "cmd+shift+space" as String?,
            let hotkey = HotKey(spec: spec, handler: { [weak self] in self?.toggleStickies() }) {
             hotkeys.append(hotkey)
@@ -83,6 +92,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         shelf.start()
+        idleTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.idleSweep()
+        }
         startWatcher()
         reminders.activate()
         reminders.reveal = { [weak self] id in self?.reveal(id: id, focus: true) }
@@ -141,16 +153,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func reveal(id: String, focus: Bool) {
+    func reveal(id: String, focus: Bool, from origin: NSRect? = nil) {
         if let controller = controllers[id] {
-            controller.show(focus: focus)
+            controller.show(focus: focus, from: origin)
             return
         }
         guard FileManager.default.fileExists(atPath: store.fileURL(for: id).path),
               let note = store.load(id: id) else { return }
         let controller = StickyController(note: note, app: self)
         controllers[id] = controller
-        controller.show(focus: focus)
+        controller.show(focus: focus, from: origin)
+    }
+
+    /// The idle life-cycle: untouched stickies go translucent after a few
+    /// seconds (content underneath shows through), then tuck into the shelf.
+    private func idleSweep() {
+        let mouse = NSEvent.mouseLocation
+        let dockAfter = config.autoDockSeconds ?? 10
+        for controller in controllers.values {
+            guard controller.panel.isVisible,
+                  !controller.panel.isKeyWindow,
+                  !controller.note.sunk else { continue }
+            if controller.panel.frame.insetBy(dx: -24, dy: -24)
+                .contains(mouse) {
+                controller.touchActivity()
+                controller.setGhost(false)
+                continue
+            }
+            let idle = Date().timeIntervalSince(controller.lastActivity)
+            if dockAfter > 0, idle > dockAfter {
+                controller.dockToShelf()
+            } else if idle > 4 {
+                controller.setGhost(true)
+            }
+        }
+    }
+
+    @objc private func toggleAutoDock(_ sender: NSMenuItem) {
+        let current = config.autoDockSeconds ?? 10
+        config.autoDockSeconds = current > 0 ? 0 : 10
+        config.save(to: store.root)
+        sender.state = (config.autoDockSeconds ?? 10) > 0 ? .on : .off
     }
 
     @discardableResult
@@ -346,6 +389,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(menuItem("Open Notes Folder", #selector(openNotesFolder), ""))
         menu.addItem(menuItem("Keyboard Shortcuts", #selector(showHelp), ""))
         menu.addItem(.separator())
+        let tuckItem = menuItem("Auto-tuck Idle Stickies", #selector(toggleAutoDock(_:)), "")
+        tuckItem.state = (Config.load(from: store.root).autoDockSeconds ?? 10) > 0 ? .on : .off
+        menu.addItem(tuckItem)
         let loginItem = menuItem("Start at Login", #selector(toggleLoginItem(_:)), "")
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(loginItem)

@@ -2,10 +2,14 @@ import AppKit
 import PeelKit
 
 /// Owns one sticky: its panel, editor, header, attachments, and persistence.
-final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
+/// NSResponder so it can own the hover tracking area (instant un-ghost).
+final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegate {
     private(set) var note: Note
     let panel: StickyPanel
     private(set) var lastDiskWrite = Date.distantPast
+    private(set) var lastActivity = Date()
+    private var isGhosted = false
+    private var isDocking = false
 
     private unowned let app: AppDelegate
     private let textView = NoteTextView()
@@ -35,6 +39,8 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
         reloadAttachments()
         if note.sunk { panel.level = .normal }
     }
+
+    required init?(coder: NSCoder) { fatalError() }
 
     // MARK: UI assembly
 
@@ -77,6 +83,9 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
         effect.addSubview(header)
         effect.addSubview(scroll)
         effect.addSubview(strip)
+        effect.addTrackingArea(NSTrackingArea(
+            rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self, userInfo: nil))
         panel.contentView = effect
 
         NSLayoutConstraint.activate([
@@ -129,7 +138,11 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
 
     // MARK: Show / hide / archive
 
-    func show(focus: Bool) {
+    /// `from` is a small source rect (a shelf tab) — the sticky expands out of
+    /// it, dock-style; without it, the standard quick scale-in.
+    func show(focus: Bool, from origin: NSRect? = nil) {
+        touchActivity()
+        isGhosted = false
         if !note.open {
             note.open = true
             persist(touch: false)
@@ -146,17 +159,69 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
             return
         }
         let target = panel.frame
-        let small = target.insetBy(dx: target.width * 0.02, dy: target.height * 0.02)
-        panel.setFrame(small, display: false)
+        let start = origin ?? target.insetBy(dx: target.width * 0.02, dy: target.height * 0.02)
+        panel.setFrame(start, display: false)
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.13
+            context.duration = origin == nil ? 0.13 : 0.30
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
             panel.animator().setFrame(target, display: true)
         }
         if focus { focusText() }
+    }
+
+    // MARK: Idle life-cycle — solid → ghost → tucked into the shelf
+
+    func touchActivity() {
+        lastActivity = Date()
+    }
+
+    /// Translucent when idle so the content underneath stays readable.
+    func setGhost(_ ghost: Bool) {
+        guard ghost != isGhosted, panel.isVisible, !isDocking else { return }
+        if ghost, panel.isKeyWindow { return }
+        isGhosted = ghost
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.25
+            panel.animator().alphaValue = ghost ? 0.42 : 1.0
+        }
+    }
+
+    /// Minimize-to-shelf: shrink toward the bottom edge and fade, like the Dock.
+    func dockToShelf() {
+        guard !isDocking, panel.isVisible else { return }
+        isDocking = true
+        flushPendingSave()
+        note.open = false
+        persist(touch: false)
+        let original = panel.frame
+        let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens[0]
+        let target = NSRect(x: original.midX - 80, y: screen.frame.minY - 8,
+                            width: 160, height: 36)
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.30
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            self.panel.animator().alphaValue = 0
+            self.panel.animator().setFrame(target, display: true)
+        }, completionHandler: { [weak self] in
+            guard let self else { return }
+            self.panel.orderOut(nil)
+            self.panel.setFrame(original, display: false)
+            self.panel.alphaValue = 1
+            self.isGhosted = false
+            self.isDocking = false
+        })
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        touchActivity()
+        setGhost(false)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        touchActivity() // idle countdown restarts from the moment you leave
     }
 
     /// Double-click the header — roll the sticky up to just its first line.
@@ -239,6 +304,7 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
     // MARK: Persistence
 
     func noteTextDidChange() {
+        touchActivity()
         saveTimer?.invalidate()
         saveTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
             self?.saveBody()
@@ -306,11 +372,21 @@ final class StickyController: NSObject, NSWindowDelegate, NoteTextViewDelegate {
 
     // MARK: NSWindowDelegate
 
-    func windowDidMove(_ notification: Notification) { scheduleFrameSave() }
-    func windowDidResize(_ notification: Notification) { scheduleFrameSave() }
-    func windowDidResignKey(_ notification: Notification) { flushPendingSave() }
+    func windowDidMove(_ notification: Notification) { touchActivity(); scheduleFrameSave() }
+    func windowDidResize(_ notification: Notification) { touchActivity(); scheduleFrameSave() }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        touchActivity()
+        setGhost(false)
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        touchActivity()
+        flushPendingSave()
+    }
 
     private func scheduleFrameSave() {
+        guard !isDocking else { return } // the minimize animation isn't a resize
         frameTimer?.invalidate()
         frameTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
             guard let self else { return }
