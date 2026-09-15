@@ -21,6 +21,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     private let textView = NoteTextView()
     private let strip = AttachmentStrip()
     private let tint = TintView()
+    private let clip = NSView()
     private let header: HeaderView
     private var saveTimer: Timer?
     private var frameTimer: Timer?
@@ -53,10 +54,11 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
 
     // MARK: Auto-height — the sticky is exactly as tall as its content
 
-    /// Fit the panel height to the text (min one line) unless the user has
-    /// dragged it to a size they want. Grows/shrinks from the top edge down.
+    /// The note's height always equals its content (floor: header + one line).
+    /// Grows and shrinks from the top edge down as you type. Width is the only
+    /// thing you resize by hand; height is never manual.
     func autoFitHeight(animate: Bool = false) {
-        guard !note.userSized, !isGhosted, expandedFrame == nil, !isDocking else { return }
+        guard !isGhosted, expandedFrame == nil, !isDocking else { return }
         panel.contentView?.layoutSubtreeIfNeeded()
         guard let layout = textView.layoutManager, let container = textView.textContainer
         else { return }
@@ -82,11 +84,17 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     // MARK: UI assembly
 
     private func buildUI() {
+        // A clip container rounds and masks everything, so the visual-effect
+        // material can't leak a bright rim at the edge (the old white halo).
+        clip.wantsLayer = true
+        clip.layer?.cornerRadius = Theme.cornerRadius
+        clip.layer?.masksToBounds = true
+
         let effect = NSVisualEffectView()
         effect.material = .popover
         effect.blendingMode = .behindWindow
         effect.state = .active
-        effect.maskImage = Theme.roundedMask(radius: Theme.cornerRadius)
+        effect.translatesAutoresizingMaskIntoConstraints = false
 
         tint.translatesAutoresizingMaskIntoConstraints = false
 
@@ -121,34 +129,40 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
 
         strip.onRemove = { [weak self] url in self?.removeAttachment(url) }
 
-        effect.addSubview(tint)
-        effect.addSubview(header)
-        effect.addSubview(scroll)
-        effect.addSubview(strip)
-        effect.addTrackingArea(NSTrackingArea(
+        clip.addSubview(effect)
+        clip.addSubview(tint)
+        clip.addSubview(header)
+        clip.addSubview(scroll)
+        clip.addSubview(strip)
+        clip.addTrackingArea(NSTrackingArea(
             rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
             owner: self, userInfo: nil))
-        panel.contentView = effect
+        panel.contentView = clip
 
         NSLayoutConstraint.activate([
-            tint.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
-            tint.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
-            tint.topAnchor.constraint(equalTo: effect.topAnchor),
-            tint.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
+            effect.leadingAnchor.constraint(equalTo: clip.leadingAnchor),
+            effect.trailingAnchor.constraint(equalTo: clip.trailingAnchor),
+            effect.topAnchor.constraint(equalTo: clip.topAnchor),
+            effect.bottomAnchor.constraint(equalTo: clip.bottomAnchor),
 
-            header.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
-            header.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
-            header.topAnchor.constraint(equalTo: effect.topAnchor),
+            tint.leadingAnchor.constraint(equalTo: clip.leadingAnchor),
+            tint.trailingAnchor.constraint(equalTo: clip.trailingAnchor),
+            tint.topAnchor.constraint(equalTo: clip.topAnchor),
+            tint.bottomAnchor.constraint(equalTo: clip.bottomAnchor),
+
+            header.leadingAnchor.constraint(equalTo: clip.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: clip.trailingAnchor),
+            header.topAnchor.constraint(equalTo: clip.topAnchor),
             header.heightAnchor.constraint(equalToConstant: 26),
 
-            scroll.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
+            scroll.leadingAnchor.constraint(equalTo: clip.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: clip.trailingAnchor),
             scroll.topAnchor.constraint(equalTo: header.bottomAnchor),
             scroll.bottomAnchor.constraint(equalTo: strip.topAnchor),
 
-            strip.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
-            strip.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
-            strip.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
+            strip.leadingAnchor.constraint(equalTo: clip.leadingAnchor),
+            strip.trailingAnchor.constraint(equalTo: clip.trailingAnchor),
+            strip.bottomAnchor.constraint(equalTo: clip.bottomAnchor),
         ])
     }
 
@@ -200,11 +214,12 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
             if focus { focusText() }
             return
         }
+        panel.orderFrontRegardless()
+        autoFitHeight() // measure now that the view is on screen and laid out
         let target = panel.frame
         let start = origin ?? target.insetBy(dx: target.width * 0.02, dy: target.height * 0.02)
         panel.setFrame(start, display: false)
         panel.alphaValue = 0
-        panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
             context.duration = origin == nil ? 0.13 : 0.30
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -255,10 +270,14 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
             target = preGhostFrame ?? panel.frame
             preGhostFrame = nil
         }
+        // Fade the CONTENT, not the window: lowering the whole window's
+        // alphaValue makes macOS composite a bright halo around the rounded
+        // corners. Fading the clip layer keeps the window opaque and clean.
+        panel.hasShadow = !ghost
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.22
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().alphaValue = ghost ? 0.5 : 1.0
+            clip.animator().alphaValue = ghost ? 0.5 : 1.0
             panel.animator().setFrame(target, display: true)
         }
     }
@@ -453,10 +472,14 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
             textView.restyle()
             autoFitHeight(animate: true)
         }
-        let diskFrame = NSRect(x: fresh.x, y: fresh.y, width: fresh.width, height: fresh.height)
-        if fresh.userSized, diskFrame != panel.frame, fresh.x != 0 || fresh.y != 0 {
-            panel.setFrame(diskFrame, display: true)
+        // Position and width follow disk; height re-fits to content below.
+        if fresh.x != 0 || fresh.y != 0 {
+            var frame = panel.frame
+            frame.origin = NSPoint(x: fresh.x, y: fresh.y)
+            frame.size.width = fresh.width
+            if frame != panel.frame { panel.setFrame(frame, display: true) }
         }
+        autoFitHeight()
         if fresh.open, !panel.isVisible { show(focus: false) }
         reloadAttachments()
         refreshBacklinks()
@@ -466,9 +489,9 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
 
     func windowDidResize(_ notification: Notification) {
         touchActivity()
-        if panel.inLiveResize, !note.userSized {
-            note.userSized = true // a hand-drag pins the size; stop auto-fitting
-        }
+        // A hand-drag on the side edges changes width; re-fit height to the new
+        // wrapping and persist. Height itself is never user-owned.
+        if panel.inLiveResize { autoFitHeight() }
         scheduleFrameSave()
     }
 
@@ -851,7 +874,9 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         let body = textView.string
         let unreferenced = store.attachments(for: note.id)
             .filter { !body.contains("⟦\($0.lastPathComponent)⟧") }
+        let wasHidden = strip.isHidden
         strip.set(urls: unreferenced)
+        if strip.isHidden != wasHidden { autoFitHeight() } // strip changes total height
     }
 
     func captureScreenshot() {

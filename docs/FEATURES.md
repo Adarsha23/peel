@@ -14,8 +14,9 @@ see [OVERVIEW.md](OVERVIEW.md); for the quick pitch see the
   no AI): a lone URL stays a clean link, code or an error is fenced as a code
   block, anything ambiguous is left exactly as pasted.
 - **New note** `⌘T` or `⌃⌥N` inside a sticky; menu bar New Sticky; `peel new`.
-- **Minimal open**: a note opens exactly as tall as its content (floor: header
-  + one line) and grows as you type.
+- **Content-height**: a note is always exactly as tall as its content (floor:
+  header + one line), growing and shrinking as you type. Height is never
+  manual; you resize width only, which changes wrapping.
 - **Autosave**: writes ~400 ms after you stop typing. No save button; survives
   crashes and force-quits.
 
