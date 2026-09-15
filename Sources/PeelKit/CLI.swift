@@ -18,6 +18,7 @@ public enum CLI {
         case "archive":         return archive(store, idPrefix: rest.first)
         case "path":            print(store.root.path); return 0
         case "links", "related": return links(store, idPrefix: rest.first)
+        case "export", "backup": return export(store, dest: rest.first)
         case "ui":              return ui(rest.first)
         case "doctor":          return doctor()
         case "help", "-h", "--help": return help()
@@ -226,6 +227,17 @@ public enum CLI {
         #endif
     }
 
+    private static func export(_ store: NoteStore, dest: String?) -> Int32 {
+        let destURL = dest.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+        guard let archive = store.exportBackup(to: destURL) else {
+            fputs("peel: export failed (is /usr/bin/zip available?)\n", stderr); return 1
+        }
+        let size = (try? FileManager.default.attributesOfItem(atPath: archive.path)[.size] as? Int) ?? 0
+        let count = store.loadAll(includeArchived: true).count
+        print("exported \(count) notes to \(archive.path) (\((size ?? 0) / 1024) KB)")
+        return 0
+    }
+
     private static func links(_ store: NoteStore, idPrefix: String?) -> Int32 {
         guard let prefix = idPrefix, let note = store.resolve(idPrefix: prefix) else {
             fputs("peel: note not found\n", stderr); return 1
@@ -266,6 +278,7 @@ public enum CLI {
           peel today            print every note touched today (markdown)
           peel archive <id>     archive a note
           peel links <id>       notes this one links to and from
+          peel export [path]    zip a full backup (notes + attachments)
           peel path             print the data directory
           peel ui <cmd>         control the running app: toggle|new|search|show-all|hide-all|help|clip
 
