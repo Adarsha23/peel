@@ -75,8 +75,9 @@ the app does a lot, and all of it is free and local.
 
 **Catch the thought before it dies**
 - `⌘⇧Space` from anywhere: latest sticky, focused, cursor ready. Press again to clear the desk
-- `⌃⌥V`: whatever's on the clipboard becomes a sticky. Text, screenshot, files, whatever
+- `⌃⌥V`: whatever's on the clipboard becomes a sticky. Smart about it too, a copied URL stays a clean link, code or an error gets fenced, a grocery list is left alone
 - `peel new "thing"` from the terminal, and the sticky pops on screen
+- a note opens one line tall and grows as you type. No giant empty box
 - everything autosaves 400 ms after you stop typing. There is no save button. Kill the app, kill the Mac, your note survives
 
 **The overlay nobody else ships**
@@ -84,7 +85,7 @@ the app does a lot, and all of it is free and local.
 - non-activating panels: Peel never steals your app's focus, never switches your menu bar
 - lives on every Space, remembers its exact position and size per monitor, across restarts
 - `⌃⌥B` parks a sticky behind your windows; bring it back the same way
-- idle stickies fade to 40% so you can read what's under them. Touch brings them back. Optional auto-tuck to the shelf
+- idle stickies fade to 40% and shrink to a thin bar so you read straight through them. Click to bring one back. `⌃⌥G` peeks on demand, `⌃⌥L` locks a sticky opaque so it never fades
 - drag one near another and the edges snap. Slow drags magnetize, fast drags fly free
 
 **The shelf**
@@ -99,8 +100,13 @@ the app does a lot, and all of it is free and local.
 - code fences go monospaced, URLs are clickable, first line renders as the note's title
 - `240*1.18=` and the answer appears. Real parser, division by zero does nothing embarrassing
 - `[[note title]]` links between stickies. Type `[[` and your titles autocomplete. Link to a note that doesn't exist and clicking it creates one
+- backlinks: a note shows a link badge when others point to it. `/links` lists what it links to and what links back, click to jump
 - `⌘+` `⌘−` per-sticky text zoom, seven muted paper colors on `⌃⌥1..7`, paste is always plain text
 - `/` on an empty line opens the command menu: type to filter, click to run. `/count` `/trim` `/lower` `/upper` `/date` `/time` `/copy` and friends
+
+**Temporary notes**
+- `@expire in 10 min` or `@expire today 6pm` and the note archives itself. Made for OTPs, temp links, throwaway output
+- relative times anchor to the note's edit time, so a note that expired while Peel was closed archives on next launch. `/expire` inserts one
 
 **Images and files**
 - paste or drop an image: saved locally, referenced inline right where your cursor was, as a clickable tag
@@ -117,13 +123,15 @@ the app does a lot, and all of it is free and local.
 - at fire time: Peel's own floating card in the note's color, with a synthesized two-note chime. Works over fullscreen, ignores Do Not Disturb, survives your screensaver, and waits until you hit Open, Snooze, or Done
 - system notifications stay on as the fallback for when the app isn't running. `peel doctor` diagnoses that whole pipeline when macOS acts up
 
-**Find anything**
-- `⌃⌥F`: Spotlight-style palette, live results, arrow keys, enter to jump. Recent notes when the query's empty
+**Command center**
+- `⌃⌥F`: one field that finds notes *and* runs actions. Type to filter, or lead with a verb: `new <text>`, `remind <when> <text>`, `today`, `shot`, `show`, `hide`, `export`
+- type anything with no verb and it offers "New note: <text>", so you can capture straight from the palette. Arrow keys move, return runs
 - searches bodies, attachment names, and OCR'd screenshot text. CLI search includes archived notes too
 
 **Your data, your rules**
 - plain markdown files with readable frontmatter in one transparent folder
 - auto-committed to a local git repo at launch and every 6 hours. Nothing is ever lost, nothing ever leaves your Mac
+- `peel export` (or the menu bar) zips the whole thing to one file. Your notes were always yours to walk away with
 - archive instead of delete, attachments trash instead of vanish, corrupt files load as plain text instead of crashing
 - `PEEL_DATA_DIR` moves the whole thing (point it at iCloud Drive for zero-server sync)
 - remap every shortcut, hotkey, and the shelf edge in `config.json`. The JSON is the settings UI
@@ -170,11 +178,16 @@ Want it always around? Menu bar icon, "Start at Login". Done.
 | `⌘B` `⌘I` `⌘E` | bold, italic, code |
 | `⌘⇧X` `⌘⇧H` | strikethrough, highlight |
 | `⌘+` `⌘−` `⌘0` | text zoom per sticky |
-| `⌃⌥F` | search |
+| `⌃⌥F` | command center: find notes or run a command |
 | `⌃⌥B` | park the sticky behind your windows / bring it back |
+| `⌃⌥G` | peek through the sticky on demand |
+| `⌃⌥L` | lock it opaque so it never fades |
 | `⌃⌥S` | screenshot straight into the note |
 | `⌃⌥A` | archive |
 | `⌃⌥1..7` | recolor |
+
+Typing tricks: `[]`+space todo, `-`+space bullet, `240*1.18=` math, `[[title]]`
+link, `@remind ...` reminder, `@expire ...` temporary note, `/` for the command menu.
 
 Every one of those is remappable: `"keys": {"hide": "cmd+shift+w", "bold": "none"}`
 in config.json, pipe for multiple chords. The shelf edge is configurable too
