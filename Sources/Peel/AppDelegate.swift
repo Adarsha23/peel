@@ -284,7 +284,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(store.root)
     }
 
-    @objc private func exportBackup() {
+    @objc func exportBackup() {
         if let archive = store.exportBackup() {
             NSWorkspace.shared.activateFileViewerSelecting([archive])
         }

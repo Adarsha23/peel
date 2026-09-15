@@ -101,7 +101,7 @@ final class HelpController: NSObject, NSWindowDelegate {
         row("⌘⌫", "delete line, repeats upward")
         row("2×click header", "collapse / expand")
         row("idle sticky", "fades see-through after 4s · click it to bring it back")
-        row("⌃⌥F", "search notes")
+        row("⌃⌥F", "command center: find notes or run new/remind/today/shot/show/hide/export")
         row("⌃⌥B", "push behind windows / bring back")
         row("⌃⌥G", "see through right now (also the eye in the header)")
         row("⌃⌥L", "lock opaque, so it never fades")

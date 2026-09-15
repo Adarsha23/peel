@@ -90,7 +90,7 @@ screenshots, not just their filenames.
 - Fires Peel's own card (chime, snooze) that ignores Do Not Disturb and waits for you
 
 **Find and keep**
-- Spotlight-style search over note text, filenames, and OCR'd screenshots (`⌃⌥F`)
+- Command center (`⌃⌥F`): one field that finds notes and runs actions (new, remind, today, screenshot, show/hide, export). Searches note text, filenames, and OCR'd screenshots
 - Archive instead of delete, attachments trash instead of vanish
 - Auto-committed local git history of every note
 - Move the whole data folder with `PEEL_DATA_DIR` (point it at iCloud for sync)

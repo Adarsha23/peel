@@ -127,9 +127,12 @@ or type any of these on their own line:
 
 ## Search, archive, history
 
-- **Search** `⌃⌥F` or menu bar: Spotlight-style palette, live results,
-  arrow-key nav, enter to jump; searches note text, filenames, and OCR'd
-  screenshot text. Recent notes when the query is empty.
+- **Command center** `⌃⌥F` or menu bar: one field that finds notes and runs
+  actions. Type to filter (note text, filenames, OCR'd screenshots), or lead
+  with a verb to run a command: `new <text>`, `remind <when> <text>`, `today`,
+  `shot`, `show`, `hide`, `export`. Typing anything with no verb offers "New
+  note: <text>" so you can capture straight from the palette. Arrow keys move,
+  return runs.
 - **Archive** `⌃⌥A` or `/archive`: tucks a note away; nothing is ever deleted.
 - **Trash, not oblivion**: removed attachments go to the Trash.
 - **Auto git history**: the data folder commits itself at launch and every 6
