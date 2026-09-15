@@ -54,6 +54,38 @@ import Foundation
     }
 }
 
+@Suite struct SmartCaptureTests {
+    @Test func loneURLStaysBare() {
+        #expect(SmartCapture.format("https://github.com/Adarsha23/peel") == "https://github.com/Adarsha23/peel")
+        #expect(SmartCapture.isSingleURL("https://a.com/b?c=d"))
+        #expect(!SmartCapture.isSingleURL("see https://a.com for more"))
+    }
+
+    @Test func codeGetsFenced() {
+        let js = "function add(a, b) {\n  return a + b;\n}"
+        #expect(SmartCapture.format(js) == "```\n" + js + "\n```")
+        #expect(SmartCapture.looksLikeCodeOrError("const x = () => {\n  return 1;\n}"))
+        #expect(SmartCapture.looksLikeCodeOrError("#include <stdio.h>\nint main() {}"))
+    }
+
+    @Test func errorsGetFenced() {
+        #expect(SmartCapture.looksLikeCodeOrError("TypeError: Cannot read properties of undefined"))
+        #expect(SmartCapture.looksLikeCodeOrError("Traceback (most recent call last)\n  File x"))
+    }
+
+    @Test func proseIsLeftAlone() {
+        #expect(SmartCapture.format("buy oat milk and coffee") == "buy oat milk and coffee")
+        #expect(!SmartCapture.looksLikeCodeOrError("Remember: call the bank tomorrow"))
+        let list = "milk\neggs\nbread"
+        #expect(SmartCapture.format(list) == list)
+    }
+
+    @Test func alreadyFencedIsNotDoubleFenced() {
+        let fenced = "```\ncode\n```"
+        #expect(SmartCapture.format(fenced) == fenced)
+    }
+}
+
 @Suite struct CalcTests {
     @Test func arithmetic() {
         #expect(Calc.evaluate("240*1.18") == 283.2)
