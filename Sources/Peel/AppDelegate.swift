@@ -281,6 +281,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(store.root)
     }
 
+    @objc private func openNotificationSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    @objc private func openScreenRecordingSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     @objc private func toggleLoginItem(_ sender: NSMenuItem) {
         let service = SMAppService.mainApp
         if service.status == .enabled {
@@ -465,6 +477,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(menuItem("Screenshot → Sticky", #selector(screenshotToSticky), ""))
         menu.addItem(menuItem("Open Notes Folder", #selector(openNotesFolder), ""))
         menu.addItem(menuItem("Keyboard Shortcuts", #selector(showHelp), ""))
+
+        let permsItem = NSMenuItem(title: "Permissions", action: nil, keyEquivalent: "")
+        let permsMenu = NSMenu()
+        let hint = NSMenuItem(title: "Peel needs none of these to run. They're only for:",
+                              action: nil, keyEquivalent: "")
+        hint.isEnabled = false
+        permsMenu.addItem(hint)
+        permsMenu.addItem(menuItem("Notifications — reminders while Peel is closed",
+                                   #selector(openNotificationSettings), ""))
+        permsMenu.addItem(menuItem("Screen Recording — ⌃⌥S screenshots",
+                                   #selector(openScreenRecordingSettings), ""))
+        permsItem.submenu = permsMenu
+        menu.addItem(permsItem)
         menu.addItem(.separator())
         let edgeItem = NSMenuItem(title: "Shelf Edge", action: nil, keyEquivalent: "")
         let edgeMenu = NSMenu()

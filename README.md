@@ -262,6 +262,23 @@ make test       # unit tests
 make install    # the whole thing
 ```
 
+## permissions
+
+Peel needs **zero permissions to run**. Everything, the overlay, capture,
+notes, search, formatting, ghost, lock, shelf, CLI, and reminders while Peel
+is open, works with nothing granted. Global hotkeys use Carbon, so there's no
+Accessibility prompt either.
+
+Two things are optional and macOS asks for them itself, once:
+
+- **Notifications** only matter for reminders that fire while Peel is
+  **closed**. While the app is running, reminders show Peel's own floating
+  card, which needs no permission. If you dismissed the prompt, the menu bar
+  has Permissions → Notifications, or run `peel doctor`.
+- **Screen Recording** may be asked the first time you use `⌃⌥S` to screenshot
+  into a note. If your capture comes out blank, grant it via the menu bar
+  Permissions → Screen Recording. Pasting or dragging images in never needs it.
+
 ## honest limitations
 
 - macOS only. The overlay trick is native AppKit and that's the point.
