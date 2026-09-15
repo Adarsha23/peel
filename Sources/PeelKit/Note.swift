@@ -17,6 +17,10 @@ public struct Note: Equatable {
     public var sunk: Bool
     /// Per-sticky text zoom (⌘+ / ⌘−).
     public var fontSize: Double
+    /// Pinned opaque: never fades to a ghost, even when idle.
+    public var locked: Bool
+    /// The user dragged the resize handle, so stop auto-fitting height to content.
+    public var userSized: Bool
     public var body: String
 
     public static let defaultWidth = 340.0
@@ -28,6 +32,7 @@ public struct Note: Equatable {
                 width: Double = Note.defaultWidth, height: Double = Note.defaultHeight,
                 created: Date = Date(), updated: Date = Date(),
                 open: Bool = true, sunk: Bool = false, fontSize: Double = 13,
+                locked: Bool = false, userSized: Bool = false,
                 body: String = "") {
         self.id = id
         self.color = color
@@ -37,6 +42,8 @@ public struct Note: Equatable {
         self.open = open
         self.sunk = sunk
         self.fontSize = fontSize
+        self.locked = locked
+        self.userSized = userSized
         self.body = body
     }
 
@@ -119,6 +126,8 @@ public extension Note {
             case "open": note.open = (value == "true")
             case "sunk": note.sunk = (value == "true")
             case "fontSize": note.fontSize = Double(value) ?? 13
+            case "locked": note.locked = (value == "true")
+            case "userSized": note.userSized = (value == "true")
             default: break
             }
         }
@@ -142,6 +151,8 @@ public extension Note {
         open: \(open)
         sunk: \(sunk)
         fontSize: \(Int(fontSize.rounded()))
+        locked: \(locked)
+        userSized: \(userSized)
         ---
 
         \(body)

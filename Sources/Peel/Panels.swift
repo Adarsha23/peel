@@ -39,7 +39,7 @@ final class StickyPanel: FloatPanel {
 
     init(frame: NSRect) {
         super.init(frame: frame, resizable: true)
-        minSize = NSSize(width: 220, height: 130)
+        minSize = NSSize(width: 200, height: 26) // ghost shrinks to the header row
     }
 
     override func cancelOperation(_ sender: Any?) {
