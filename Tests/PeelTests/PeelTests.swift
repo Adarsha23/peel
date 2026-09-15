@@ -10,11 +10,9 @@ import Foundation
         note.sunk = true
         note.fontSize = 16
         note.locked = true
-        note.userSized = true
         let parsed = Note.parse(fileContents: note.serialize(), fallbackID: "fallback")
         #expect(parsed.fontSize == 16)
         #expect(parsed.locked == true)
-        #expect(parsed.userSized == true)
         #expect(parsed.id == note.id)
         #expect(parsed.color == "lavender")
         #expect(parsed.x == 120)
