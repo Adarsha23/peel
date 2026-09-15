@@ -164,6 +164,48 @@ public final class NoteStore {
         return dest
     }
 
+    // MARK: Backup
+
+    /// Zip the whole data directory (notes, attachments, archive, config) to a
+    /// single file. Excludes the internal .git history to keep it lean. Returns
+    /// the created archive, or nil on failure. Your notes are already plain
+    /// files, so this is a convenience, not a lock-in escape hatch.
+    public func exportBackup(to destination: URL? = nil) -> URL? {
+        let fm = FileManager.default
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let name = "peel-backup-\(formatter.string(from: Date())).zip"
+
+        var target: URL
+        if let destination {
+            target = destination
+            var isDir: ObjCBool = false
+            let exists = fm.fileExists(atPath: target.path, isDirectory: &isDir)
+            if target.pathExtension != "zip" || (exists && isDir.boolValue) {
+                target = target.appendingPathComponent(name)
+            }
+        } else {
+            target = fm.homeDirectoryForCurrentUser.appendingPathComponent("Desktop/\(name)")
+        }
+        try? fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? fm.removeItem(at: target)
+
+        let zip = Process()
+        zip.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
+        zip.currentDirectoryURL = root
+        zip.arguments = ["-r", "-q", "-X", target.path, ".", "-x", ".git/*"]
+        zip.standardOutput = FileHandle.nullDevice
+        zip.standardError = FileHandle.nullDevice
+        do {
+            try zip.run()
+            zip.waitUntilExit()
+        } catch {
+            return nil
+        }
+        return zip.terminationStatus == 0 && fm.fileExists(atPath: target.path) ? target : nil
+    }
+
     // MARK: Search
 
     /// Case-insensitive AND-token search over body, id, and attachment filenames.

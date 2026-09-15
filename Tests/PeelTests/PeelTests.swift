@@ -347,6 +347,18 @@ final class StoreTests {
         #expect(u2?.lastPathComponent == "shot-2.png")
     }
 
+@Test func exportBackupZipsTheData() throws {
+        var note = Note(body: "backup me")
+        store.save(&note)
+        store.attach(data: Data("x".utf8), named: "file.txt", to: note.id)
+        let dest = tmp.appendingPathComponent("out")
+        let archive = try #require(store.exportBackup(to: dest))
+        #expect(archive.pathExtension == "zip")
+        #expect(FileManager.default.fileExists(atPath: archive.path))
+        let size = (try FileManager.default.attributesOfItem(atPath: archive.path)[.size] as? Int) ?? 0
+        #expect(size > 0)
+    }
+
     @Test func corruptFileDoesNotBreakLoadAll() {
         var good = Note(body: "fine")
         store.save(&good)

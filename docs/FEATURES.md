@@ -134,6 +134,9 @@ or type any of these on their own line:
 - **Trash, not oblivion**: removed attachments go to the Trash.
 - **Auto git history**: the data folder commits itself at launch and every 6
   hours, so every note's history is recoverable.
+- **Export backup**: `peel export [path]` or the menu bar zips the whole data
+  folder (notes, attachments, archive, config) to one file. Your notes are
+  already plain files, so this is convenience, not an escape hatch.
 - **Corrupt-safe**: a malformed note file loads as plain text instead of
   crashing the app.
 
@@ -141,7 +144,7 @@ or type any of these on their own line:
 
 - `peel` launch or focus; `peel new "text"` (also reads stdin)
 - `peel list [--all]`, `peel show <id>`, `peel search <query>`, `peel today`
-- `peel archive <id>`, `peel path`
+- `peel archive <id>`, `peel path`, `peel export [path]` (zip backup)
 - `peel ui <toggle|new|search|show-all|hide-all|help|clip|shelf>` to drive the running app
 - `peel doctor` for reminder diagnostics
 

@@ -284,6 +284,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(store.root)
     }
 
+    @objc private func exportBackup() {
+        if let archive = store.exportBackup() {
+            NSWorkspace.shared.activateFileViewerSelecting([archive])
+        }
+    }
+
     @objc private func openNotificationSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") {
             NSWorkspace.shared.open(url)
@@ -486,6 +492,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(menuItem("Screenshot → Sticky", #selector(screenshotToSticky), ""))
         menu.addItem(menuItem("Open Notes Folder", #selector(openNotesFolder), ""))
+        menu.addItem(menuItem("Export Backup…", #selector(exportBackup), ""))
         menu.addItem(menuItem("Keyboard Shortcuts", #selector(showHelp), ""))
 
         let permsItem = NSMenuItem(title: "Permissions", action: nil, keyEquivalent: "")
