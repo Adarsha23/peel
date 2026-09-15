@@ -489,10 +489,15 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
 
     func windowDidResize(_ notification: Notification) {
         touchActivity()
-        // A hand-drag on the side edges changes width; re-fit height to the new
-        // wrapping and persist. Height itself is never user-owned.
-        if panel.inLiveResize { autoFitHeight() }
         scheduleFrameSave()
+    }
+
+    // Re-fit height only when the user FINISHES a hand-drag (width may have
+    // changed the wrapping). inLiveResize is also true during programmatic
+    // animations, so checking it in windowDidResize made autofit fight every
+    // show/ghost/dock animation — that was the "falling" glitch.
+    func windowDidEndLiveResize(_ notification: Notification) {
+        autoFitHeight()
     }
 
     func windowDidMove(_ notification: Notification) { touchActivity(); scheduleFrameSave() }
