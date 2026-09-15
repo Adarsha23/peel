@@ -16,7 +16,8 @@ Native AppKit, one ~600 KB binary, zero dependencies, zero network. Your notes a
   <img src="https://img.shields.io/badge/license-MIT-yellow" alt="MIT">
 </p>
 
-<p align="center"><b><a href="https://github.com/Adarsha23/peel/releases/download/v1.0/peel-brag.mp4">▶ watch the 80-second tour</a></b>, deadpan voiceover included</p>
+<p align="center"><a href="https://github.com/Adarsha23/peel/releases/download/v1.0/peel-brag.mp4"><img src="docs/demo.gif" width="760" alt="12 seconds of the demo: a thought lands as a sticky over a playing video"></a><br>
+<sub><b><a href="https://github.com/Adarsha23/peel/releases/download/v1.0/peel-brag.mp4">▶ full 80-second tour with sound</a></b>, deadpan voiceover included</sub></p>
 
 <p align="center">
   <img src="docs/hero-fullscreen.png" width="800" alt="A Peel sticky floating over fullscreen video, video still playing">
