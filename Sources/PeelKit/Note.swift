@@ -80,6 +80,17 @@ public struct Note: Equatable {
         }
         return (open, done)
     }
+
+    /// The [[wiki link]] targets referenced in this note's body.
+    public var outgoingLinkTitles: [String] {
+        guard let regex = try? NSRegularExpression(pattern: "\\[\\[([^\\]\\n]+)\\]\\]") else { return [] }
+        let ns = body as NSString
+        var titles: [String] = []
+        regex.enumerateMatches(in: body, range: NSRange(location: 0, length: ns.length)) { match, _, _ in
+            if let match { titles.append(ns.substring(with: match.range(at: 1))) }
+        }
+        return titles
+    }
 }
 
 public extension Date {

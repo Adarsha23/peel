@@ -65,6 +65,9 @@ see [OVERVIEW.md](OVERVIEW.md); for the quick pitch see the
 - **Note links**: `[[note title]]` becomes a clickable pill that jumps to that
   note; typing `[[` autocompletes your titles; linking to a missing note
   creates it.
+- **Backlinks**: a note shows a link badge in its header when others link to
+  it; `/links` (or `peel links <id>`) lists notes it links to and notes that
+  link back, click to jump.
 - **Text zoom** `⌘+` / `⌘−` / `⌘0`: per-note, persisted.
 - **Seven colors** `⌃⌥1–7` or the dot menu: muted paper palettes.
 - **Clickable URLs**; **paste is always plain text** (no rogue formatting).

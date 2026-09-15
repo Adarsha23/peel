@@ -17,6 +17,7 @@ public enum CLI {
         case "today":           return today(store)
         case "archive":         return archive(store, idPrefix: rest.first)
         case "path":            print(store.root.path); return 0
+        case "links", "related": return links(store, idPrefix: rest.first)
         case "ui":              return ui(rest.first)
         case "doctor":          return doctor()
         case "help", "-h", "--help": return help()
@@ -45,6 +46,13 @@ public enum CLI {
             fputs("peel: note not found\n", stderr); return 1
         }
         print(note.serialize())
+        let related = store.related(to: note)
+        if !related.outgoing.isEmpty {
+            print("\nLinks to: " + related.outgoing.map(\.title).joined(separator: ", "))
+        }
+        if !related.incoming.isEmpty {
+            print("Linked from: " + related.incoming.map(\.title).joined(separator: ", "))
+        }
         let files = store.attachments(for: note.id)
         if !files.isEmpty {
             print("\nAttachments (\(store.attachmentsDir(for: note.id).path)):")
@@ -218,6 +226,19 @@ public enum CLI {
         #endif
     }
 
+    private static func links(_ store: NoteStore, idPrefix: String?) -> Int32 {
+        guard let prefix = idPrefix, let note = store.resolve(idPrefix: prefix) else {
+            fputs("peel: note not found\n", stderr); return 1
+        }
+        let related = store.related(to: note)
+        if related.outgoing.isEmpty, related.incoming.isEmpty {
+            print("no links. use [[note title]] to connect notes."); return 0
+        }
+        for linked in related.outgoing { print("→ \(linked.id)  \(linked.title)") }
+        for linked in related.incoming { print("← \(linked.id)  \(linked.title)") }
+        return 0
+    }
+
     /// Remote-controls the running app over a distributed notification.
     private static func ui(_ command: String?) -> Int32 {
         let known = ["toggle", "new", "search", "show-all", "hide-all", "help", "clip", "shelf"]
@@ -244,6 +265,7 @@ public enum CLI {
           peel search <query>   full-text search across all notes
           peel today            print every note touched today (markdown)
           peel archive <id>     archive a note
+          peel links <id>       notes this one links to and from
           peel path             print the data directory
           peel ui <cmd>         control the running app: toggle|new|search|show-all|hide-all|help|clip
 

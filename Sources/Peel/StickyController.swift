@@ -45,6 +45,8 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         textView.restyle()
         reloadAttachments()
         header.locked = note.locked
+        header.onLinks = { [weak self] in self?.showLinksMenu() }
+        refreshBacklinks()
         autoFitHeight() // open minimally: fit the panel to its content
         if note.sunk { panel.level = .normal }
     }
@@ -408,6 +410,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         persist(touch: true)
         app.reminders.sync(note: note)
         reloadAttachments() // deleting a ⟦token⟧ returns its file to the strip
+        refreshBacklinks()
     }
 
     private func captureFrame() {
@@ -455,6 +458,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         }
         if fresh.open, !panel.isVisible { show(focus: false) }
         reloadAttachments()
+        refreshBacklinks()
     }
 
     // MARK: NSWindowDelegate
@@ -557,6 +561,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         case "behind", "park", "front", "float": run = { [weak self] in self?.toggleLayer() }
         case "ghost", "peek": run = { [weak self] in self?.toggleGhost() }
         case "lock", "pin", "unlock": run = { [weak self] in self?.toggleLock() }
+        case "links", "related", "backlinks": run = { [weak self] in self?.showLinksMenu() }
         case "archive", "done": run = { [weak self] in self?.archive() }
         case "shot", "screenshot": run = { [weak self] in self?.captureScreenshot() }
         case "todo": run = { [weak self] in self?.textView.toggleTodo(nil) }
@@ -886,6 +891,47 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         autoFitHeight(animate: true)
     }
 
+    // MARK: Backlinks / related notes
+
+    /// A menu of notes this one links to and notes that link back to it.
+    func showLinksMenu() {
+        let (incoming, outgoing) = store.related(to: note)
+        let menu = NSMenu()
+        func section(_ title: String, _ notes: [Note]) {
+            guard !notes.isEmpty else { return }
+            let header = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            menu.addItem(header)
+            for linked in notes {
+                let item = NSMenuItem(title: "   " + linked.title,
+                                      action: #selector(linkPicked(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = linked.id
+                item.image = Theme.swatch(Theme.palette(linked.color), diameter: 9)
+                menu.addItem(item)
+            }
+        }
+        section("Links to", outgoing)
+        if !incoming.isEmpty, !outgoing.isEmpty { menu.addItem(.separator()) }
+        section("Linked from", incoming)
+        if menu.items.isEmpty {
+            let empty = NSMenuItem(title: "No links yet. Use [[note title]] to connect notes.",
+                                   action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+        }
+        popup(menu, atCharacter: textView.selectedRange().location)
+    }
+
+    @objc private func linkPicked(_ sender: NSMenuItem) {
+        if let id = sender.representedObject as? String { app.reveal(id: id, focus: true) }
+    }
+
+    /// Refresh the header's "linked from" count (cheap full-store scan).
+    func refreshBacklinks() {
+        header.backlinkCount = store.related(to: note).incoming.count
+    }
+
     // MARK: Wiki links
 
     func noteWikiExists(_ title: String) -> Bool {
@@ -1033,6 +1079,7 @@ final class HeaderView: NSView {
     var onMenu: ((NSView) -> Void)?
     var onCollapse: (() -> Void)?
     var onGhost: (() -> Void)?
+    var onLinks: (() -> Void)?
     var onSnap: ((NSPoint, NSSize) -> NSPoint)?
 
     private var dragStartMouse: NSPoint?
@@ -1046,11 +1093,33 @@ final class HeaderView: NSView {
             ghostButton.isHidden = locked // ghosting is disabled while locked
         }
     }
+    /// Count of notes linking here; shows a small clickable badge when > 0.
+    var backlinkCount = 0 {
+        didSet {
+            linkButton.isHidden = backlinkCount == 0
+            linkButton.title = " \(backlinkCount)"
+        }
+    }
 
     private let hideButton = HeaderView.symbolButton("xmark", size: 9)
     private let ghostButton = HeaderView.symbolButton("eye", size: 10)
     private let newButton = HeaderView.symbolButton("plus", size: 10)
     private let dotButton = NSButton()
+    private let linkButton: NSButton = {
+        let button = NSButton()
+        button.isBordered = false
+        button.imagePosition = .imageLeading
+        button.font = Theme.rounded(10, weight: .semibold)
+        button.contentTintColor = .tertiaryLabelColor
+        let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
+        button.image = NSImage(systemSymbolName: "link", accessibilityDescription: "Linked notes")?
+            .withSymbolConfiguration(config)
+        button.imageHugsTitle = true
+        button.isHidden = true
+        button.toolTip = "Linked notes (/links)"
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let lockIndicator: NSImageView = {
         let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
         let view = NSImageView(image: NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Locked")?
@@ -1079,6 +1148,8 @@ final class HeaderView: NSView {
         dotButton.action = #selector(menuPressed)
         dotButton.toolTip = "Color & actions"
         dotButton.translatesAutoresizingMaskIntoConstraints = false
+        linkButton.target = self
+        linkButton.action = #selector(linksPressed)
         hideButton.translatesAutoresizingMaskIntoConstraints = false
         newButton.translatesAutoresizingMaskIntoConstraints = false
         ghostButton.translatesAutoresizingMaskIntoConstraints = false
@@ -1087,7 +1158,10 @@ final class HeaderView: NSView {
         addSubview(ghostButton)
         addSubview(dotButton)
         addSubview(lockIndicator)
+        addSubview(linkButton)
         NSLayoutConstraint.activate([
+            linkButton.leadingAnchor.constraint(equalTo: lockIndicator.trailingAnchor, constant: 8),
+            linkButton.centerYAnchor.constraint(equalTo: centerYAnchor),
             hideButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 9),
             hideButton.centerYAnchor.constraint(equalTo: centerYAnchor),
             lockIndicator.leadingAnchor.constraint(equalTo: hideButton.trailingAnchor, constant: 8),
@@ -1132,6 +1206,7 @@ final class HeaderView: NSView {
     @objc private func hidePressed() { onHide?() }
     @objc private func newPressed() { onNew?() }
     @objc private func ghostPressed() { onGhost?() }
+    @objc private func linksPressed() { onLinks?() }
     @objc private func menuPressed() { onMenu?(dotButton) }
 
     // Manual drag instead of performDrag so edges can magnetize to other
