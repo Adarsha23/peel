@@ -121,6 +121,7 @@ final class HelpController: NSObject, NSWindowDelegate {
         row("- + space", "bullet")
         row("``` … ```", "code block")
         row("@remind", "in 20 min · every weekday 9am · click the tag to pick")
+        row("@expire", "in 10 min · today 6pm, the note archives itself then (/expire)")
         row("240*1.18=", "typing = after math inserts the result")
         row("[[note title]]", "link to another sticky, click to jump, [[ offers titles")
         row("⟦image-1.png⟧", "click to view · drop/paste to add · text inside is searchable")

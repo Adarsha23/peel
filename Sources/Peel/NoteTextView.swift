@@ -216,6 +216,26 @@ final class NoteTextView: NSTextView {
                     remindTokens.append((tokenRange, nil))
                 }
             }
+            // @expire lines: purple token, the note self-archives at that time
+            if trimmed.hasPrefix("@expire") {
+                let tokenRange = NSRange(location: glyphLocation, length: 7)
+                if let match = When.detect(in: line) {
+                    let dateRange = NSRange(location: lineStart + match.range.location,
+                                            length: match.range.length)
+                    storage.addAttribute(.foregroundColor, value: NSColor.systemPurple, range: tokenRange)
+                    storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue,
+                                         range: dateRange)
+                    storage.addAttribute(.underlineColor, value: NSColor.systemPurple, range: dateRange)
+                    storage.addAttribute(.toolTip,
+                                         value: "Archives itself \(NoteTextView.remindTip.string(from: match.date))",
+                                         range: lineRange)
+                } else {
+                    storage.addAttribute(.foregroundColor, value: NSColor.systemRed, range: tokenRange)
+                    storage.addAttribute(.toolTip,
+                                         value: "No time recognized, write e.g. “in 10 min” or “today 6pm”",
+                                         range: lineRange)
+                }
+            }
         }
 
         if let detector = NoteTextView.linkDetector {
