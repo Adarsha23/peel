@@ -132,6 +132,7 @@ final class HelpController: NSObject, NSWindowDelegate {
         row("/hide  /behind", "hide · layer toggle")
         row("/ghost", "instant see-through, click to solidify")
         row("/lock", "pin the sticky opaque")
+        row("/links", "notes this one links to and from (the link badge too)")
         row("/archive  /shot", "archive · screenshot")
         row("/remind", "pick a time, or write it: /remind in 20 min pay rent")
         row("/date  /time", "insert date · time")

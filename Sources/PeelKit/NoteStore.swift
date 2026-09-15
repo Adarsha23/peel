@@ -71,6 +71,35 @@ public final class NoteStore {
         return all.first { $0.id == idPrefix } ?? all.first { $0.id.hasPrefix(idPrefix) }
     }
 
+    /// Resolve a [[link]] target to a note: exact title, then prefix, then
+    /// contains, then id prefix. The one place link-matching is defined.
+    public func note(matchingTitle query: String, in notes: [Note]) -> Note? {
+        let q = query.lowercased().trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return nil }
+        return notes.first { $0.title.lowercased() == q }
+            ?? notes.first { $0.title.lowercased().hasPrefix(q) }
+            ?? notes.first { $0.title.lowercased().contains(q) }
+            ?? notes.first { $0.id.hasPrefix(q) }
+    }
+
+    /// A note's relationships: notes it links to (outgoing) and notes that
+    /// link back to it (incoming), resolved through the [[link]] graph.
+    public func related(to note: Note, in candidates: [Note]? = nil)
+        -> (incoming: [Note], outgoing: [Note]) {
+        let all = candidates ?? loadAll()
+        var seen = Set<String>()
+        let outgoing = note.outgoingLinkTitles
+            .compactMap { self.note(matchingTitle: $0, in: all) }
+            .filter { $0.id != note.id && seen.insert($0.id).inserted }
+        let incoming = all.filter { other in
+            other.id != note.id
+                && other.outgoingLinkTitles.contains {
+                    self.note(matchingTitle: $0, in: all)?.id == note.id
+                }
+        }
+        return (incoming, outgoing)
+    }
+
     // MARK: Attachments
 
     public func attachmentsDir(for id: String, create: Bool = false) -> URL {

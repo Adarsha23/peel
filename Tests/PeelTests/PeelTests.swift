@@ -314,6 +314,24 @@ final class StoreTests {
         #expect(store.attachments(for: note.id).map(\.lastPathComponent) == ["shot.png"])
     }
 
+@Test func relatedNotesResolveThroughLinks() {
+        var hub = Note(body: "Project Hub\nthe main note")
+        var a = Note(body: "Task A\nsee [[Project Hub]] for context")
+        var b = Note(body: "Task B\nalso [[project hub]] lowercase")
+        store.save(&hub); store.save(&a); store.save(&b)
+        let related = store.related(to: hub)
+        #expect(Set(related.incoming.map(\.id)) == Set([a.id, b.id]))
+        #expect(related.outgoing.isEmpty)
+        let fromA = store.related(to: a)
+        #expect(fromA.outgoing.map(\.id) == [hub.id])
+        #expect(fromA.incoming.isEmpty)
+    }
+
+    @Test func outgoingLinkTitlesParsed() {
+        let note = Note(body: "links to [[One]] and [[Two Three]]")
+        #expect(note.outgoingLinkTitles == ["One", "Two Three"])
+    }
+
     @Test func resolveByPrefix() {
         var note = Note(body: "findable")
         store.save(&note)

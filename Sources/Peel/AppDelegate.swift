@@ -343,13 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: Wiki links
 
     func findNote(titled query: String) -> String? {
-        let q = query.lowercased().trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return nil }
-        let notes = store.loadAll()
-        return notes.first { $0.title.lowercased() == q }?.id
-            ?? notes.first { $0.title.lowercased().hasPrefix(q) }?.id
-            ?? notes.first { $0.title.lowercased().contains(q) }?.id
-            ?? notes.first { $0.id.hasPrefix(q) }?.id
+        store.note(matchingTitle: query, in: store.loadAll())?.id
     }
 
     func noteTitles() -> [(id: String, title: String)] {
