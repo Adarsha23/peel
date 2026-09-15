@@ -554,6 +554,8 @@ final class NoteTextView: NSTextView {
         didChangeText()
     }
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     /// Click a ⟦image⟧ token to view it; click a ☐/☑ glyph to toggle it.
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)

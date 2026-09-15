@@ -184,6 +184,12 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         lastActivity = Date()
     }
 
+    /// Any click on the panel: wake it up and bring it back solid.
+    func stickyClicked() {
+        touchActivity()
+        setGhost(false)
+    }
+
     /// Instant see-through on demand: the header eye, ⌃⌥G, or /ghost.
     func toggleGhost() {
         if isGhosted {
