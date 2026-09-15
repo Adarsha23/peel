@@ -257,7 +257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                   let data = NoteTextView.imageData(from: pasteboard) {
             controller.noteAttachImageData(data, at: 0)
         } else if let text = pasteboard.string(forType: .string) {
-            controller.appendClipboardText(text)
+            controller.appendClipboardText(SmartCapture.format(text))
         }
     }
 

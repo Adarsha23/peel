@@ -10,6 +10,9 @@ see [OVERVIEW.md](OVERVIEW.md); for the quick pitch see the
   hides everything if a note is already up.
 - **Clipboard capture** `⌃⌥V` from anywhere: turns whatever you copied (text,
   image, or files) into a new note.
+- **Smart capture**: clipboard text is shaped deterministically (no network,
+  no AI): a lone URL stays a clean link, code or an error is fenced as a code
+  block, anything ambiguous is left exactly as pasted.
 - **New note** `⌘T` or `⌃⌥N` inside a sticky; menu bar New Sticky; `peel new`.
 - **Minimal open**: a note opens exactly as tall as its content (floor: header
   + one line) and grows as you type.
