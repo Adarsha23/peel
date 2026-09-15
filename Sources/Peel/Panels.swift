@@ -46,6 +46,17 @@ final class StickyPanel: FloatPanel {
         sticky?.hide()
     }
 
+    /// Any click anywhere on the sticky solidifies a ghost: header, text,
+    /// strip, whatever. Key-window changes alone miss the header-drag case.
+    /// Header buttons are exempt so the eye can toggle both ways.
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, let content = contentView,
+           let hit = content.hitTest(event.locationInWindow), !(hit is NSButton) {
+            sticky?.stickyClicked()
+        }
+        super.sendEvent(event)
+    }
+
     /// Main-menu key equivalents don't fire while the app is inactive (the normal
     /// state for a non-activating panel), so the panel dispatches its own.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
