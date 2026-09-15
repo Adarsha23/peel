@@ -8,7 +8,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     let panel: StickyPanel
     private(set) var lastDiskWrite = Date.distantPast
     private(set) var lastActivity = Date()
-    private var isGhosted = false
+    private(set) var isGhosted = false
     private var isDocking = false
 
     private unowned let app: AppDelegate
@@ -59,6 +59,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         header.onNew = { [weak self] in self?.app.newSticky() }
         header.onMenu = { [weak self] button in self?.showContextMenu(from: button) }
         header.onCollapse = { [weak self] in self?.toggleCollapse() }
+        header.onGhost = { [weak self] in self?.toggleGhost() }
         header.onSnap = { [weak self] origin, size in
             guard let self else { return origin }
             return self.app.snappedOrigin(origin, size: size, excluding: self.note.id)
@@ -183,10 +184,20 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         lastActivity = Date()
     }
 
+    /// Instant see-through on demand: the header eye, ⌃⌥G, or /ghost.
+    func toggleGhost() {
+        if isGhosted {
+            touchActivity()
+            setGhost(false)
+        } else {
+            setGhost(true, force: true)
+        }
+    }
+
     /// Translucent when idle so the content underneath stays readable.
-    func setGhost(_ ghost: Bool) {
+    func setGhost(_ ghost: Bool, force: Bool = false) {
         guard ghost != isGhosted, panel.isVisible, !isDocking else { return }
-        if ghost, panel.isKeyWindow { return }
+        if ghost, panel.isKeyWindow, !force { return }
         isGhosted = ghost
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.25
@@ -221,8 +232,8 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     }
 
     override func mouseEntered(with event: NSEvent) {
-        touchActivity()
-        setGhost(false)
+        // hold solidity while reading; a ghosted sticky needs a click to return
+        if !isGhosted { touchActivity() }
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -466,6 +477,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         case "search", "find": run = { [weak self] in self?.app.showSearch() }
         case "hide": run = { [weak self] in self?.hide() }
         case "behind", "park", "front", "float": run = { [weak self] in self?.toggleLayer() }
+        case "ghost", "peek": run = { [weak self] in self?.toggleGhost() }
         case "archive", "done": run = { [weak self] in self?.archive() }
         case "shot", "screenshot": run = { [weak self] in self?.captureScreenshot() }
         case "todo": run = { [weak self] in self?.textView.toggleTodo(nil) }
@@ -888,6 +900,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         case .toggleTodo: textView.toggleTodo(nil)
         case .search: app.showSearch()
         case .layerToggle: toggleLayer()
+        case .ghostToggle: toggleGhost()
         case .screenshot: captureScreenshot()
         case .archive: archive()
         case .bold: textView.toggleWrap("**")
@@ -931,6 +944,7 @@ final class HeaderView: NSView {
     var onNew: (() -> Void)?
     var onMenu: ((NSView) -> Void)?
     var onCollapse: (() -> Void)?
+    var onGhost: (() -> Void)?
     var onSnap: ((NSPoint, NSSize) -> NSPoint)?
 
     private var dragStartMouse: NSPoint?
@@ -939,6 +953,7 @@ final class HeaderView: NSView {
     var dotColor: NSColor = .controlAccentColor { didSet { dotButton.image = dotImage() } }
 
     private let hideButton = HeaderView.symbolButton("xmark", size: 9)
+    private let ghostButton = HeaderView.symbolButton("eye", size: 10)
     private let newButton = HeaderView.symbolButton("plus", size: 10)
     private let dotButton = NSButton()
 
@@ -947,9 +962,12 @@ final class HeaderView: NSView {
         hideButton.target = self
         hideButton.action = #selector(hidePressed)
         hideButton.toolTip = "Hide (⌘W / esc)"
+        ghostButton.target = self
+        ghostButton.action = #selector(ghostPressed)
+        ghostButton.toolTip = "See through (⌃⌥G), click the note to bring it back"
         newButton.target = self
         newButton.action = #selector(newPressed)
-        newButton.toolTip = "New sticky (⌘N)"
+        newButton.toolTip = "New sticky (⌘T)"
         dotButton.isBordered = false
         dotButton.imagePosition = .imageOnly
         dotButton.image = dotImage()
@@ -959,8 +977,10 @@ final class HeaderView: NSView {
         dotButton.translatesAutoresizingMaskIntoConstraints = false
         hideButton.translatesAutoresizingMaskIntoConstraints = false
         newButton.translatesAutoresizingMaskIntoConstraints = false
+        ghostButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hideButton)
         addSubview(newButton)
+        addSubview(ghostButton)
         addSubview(dotButton)
         NSLayoutConstraint.activate([
             hideButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 9),
@@ -971,9 +991,12 @@ final class HeaderView: NSView {
             dotButton.heightAnchor.constraint(equalToConstant: 14),
             newButton.trailingAnchor.constraint(equalTo: dotButton.leadingAnchor, constant: -8),
             newButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            ghostButton.trailingAnchor.constraint(equalTo: newButton.leadingAnchor, constant: -8),
+            ghostButton.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
         hideButton.alphaValue = 0
         newButton.alphaValue = 0
+        ghostButton.alphaValue = 0
         dotButton.alphaValue = 0.5
     }
 
@@ -1001,6 +1024,7 @@ final class HeaderView: NSView {
 
     @objc private func hidePressed() { onHide?() }
     @objc private func newPressed() { onNew?() }
+    @objc private func ghostPressed() { onGhost?() }
     @objc private func menuPressed() { onMenu?(dotButton) }
 
     // Manual drag instead of performDrag so edges can magnetize to other
@@ -1066,6 +1090,7 @@ final class HeaderView: NSView {
             context.duration = 0.15
             hideButton.animator().alphaValue = hovering ? 1 : 0
             newButton.animator().alphaValue = hovering ? 1 : 0
+            ghostButton.animator().alphaValue = hovering ? 1 : 0
             dotButton.animator().alphaValue = hovering ? 1 : 0.5
         }
     }

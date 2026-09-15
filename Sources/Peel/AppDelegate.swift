@@ -194,10 +194,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard controller.panel.isVisible,
                   !controller.panel.isKeyWindow,
                   !controller.note.sunk else { continue }
-            if controller.panel.frame.insetBy(dx: -24, dy: -24)
-                .contains(mouse) {
+            // hovering delays the fade while you read the note, but once
+            // ghosted only a click brings it back
+            if !controller.isGhosted,
+               controller.panel.frame.insetBy(dx: -24, dy: -24).contains(mouse) {
                 controller.touchActivity()
-                controller.setGhost(false)
                 continue
             }
             let idle = Date().timeIntervalSince(controller.lastActivity)
