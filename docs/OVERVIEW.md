@@ -80,6 +80,9 @@ screenshots, not just their filenames.
 - Every image is OCR'd on-device, so search reads the text inside it
 - Files become chips: click to open, reveal, copy path, or trash
 
+**Temporary notes**
+- `@expire in 10 min` or `@expire today 6pm` and the note archives itself, for OTPs and throwaway stuff
+
 **Reminders**
 - Natural language: `in 20 min`, `tomorrow 9am`, `every weekday at 9:30`
 - Recurring reminders re-arm themselves

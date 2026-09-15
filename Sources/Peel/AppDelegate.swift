@@ -37,6 +37,7 @@ struct Config: Codable {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let store = NoteStore()
     let reminders = Reminders()
+    let expiry = Expiry()
 
     private(set) var controllers: [String: StickyController] = [:]
     private var statusItem: NSStatusItem?
@@ -67,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         colorRotation = store.loadAll(includeArchived: true).count
         for note in store.loadAll() {
             reminders.sync(note: note) // reschedule after reboot
+            expiry.sync(note: note)
             guard note.open else { continue }
             let controller = StickyController(note: note, app: self)
             controllers[note.id] = controller
@@ -103,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startWatcher()
         reminders.activate()
         reminders.reveal = { [weak self] id in self?.reveal(id: id, focus: true) }
+        expiry.onExpire = { [weak self] id in self?.expireNote(id) }
         reminders.onFire = { [weak self] noteID, text in
             guard let self else { return }
             let note = self.store.load(id: noteID)
@@ -338,6 +341,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func stickyWasArchived(id: String) {
         controllers.removeValue(forKey: id)
+        expiry.cancel(for: id)
+    }
+
+    /// An @expire time arrived: fade the sticky out and archive it.
+    private func expireNote(_ id: String) {
+        expiry.cancel(for: id)
+        if let controller = controllers[id] {
+            controller.archive()
+        } else if store.load(id: id) != nil {
+            store.archive(id: id)
+            reminders.cancelAll(for: id)
+        }
     }
 
     // MARK: Wiki links
@@ -436,6 +451,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for note in store.loadAll() {
             seen.insert(note.id)
             reminders.sync(note: note) // external edits (CLI, agents) must schedule too
+            expiry.sync(note: note)
             if let controller = controllers[note.id] {
                 controller.externalUpdate(note)
             } else if note.open {

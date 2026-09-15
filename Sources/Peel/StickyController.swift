@@ -409,6 +409,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         note.body = markdown
         persist(touch: true)
         app.reminders.sync(note: note)
+        app.expiry.sync(note: note)
         reloadAttachments() // deleting a ⟦token⟧ returns its file to the strip
         refreshBacklinks()
     }
@@ -562,6 +563,16 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         case "ghost", "peek": run = { [weak self] in self?.toggleGhost() }
         case "lock", "pin", "unlock": run = { [weak self] in self?.toggleLock() }
         case "links", "related", "backlinks": run = { [weak self] in self?.showLinksMenu() }
+        case "expire", "temp", "temporary":
+            run = { [weak self] in
+                guard let self else { return }
+                let prefix = "@expire in 1 hour "
+                let hint = "note archives itself then"
+                let start = self.textView.selectedRange().location
+                self.textView.insertPlain(prefix + hint, at: nil)
+                self.textView.setSelectedRange(NSRange(location: start + (prefix as NSString).length,
+                                                       length: (hint as NSString).length))
+            }
         case "archive", "done": run = { [weak self] in self?.archive() }
         case "shot", "screenshot": run = { [weak self] in self?.captureScreenshot() }
         case "todo": run = { [weak self] in self?.textView.toggleTodo(nil) }

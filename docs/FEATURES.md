@@ -101,6 +101,14 @@ or type any of these on their own line:
 - **File chips**: non-image files show as chips, click to open, right-click to
   reveal, copy path, or trash. Files over 100 MB are symlinked, not copied.
 
+## Temporary notes
+
+- **Auto-expire**: an `@expire <time>` line archives the note when the time
+  arrives (`@expire in 10 min`, `@expire today 6pm`). Good for OTPs, temp
+  links, and throwaway output. Insert one with `/expire`.
+- Relative times anchor to the note's last edit, so they stay correct across
+  restarts; a note that expired while Peel was closed archives on next launch.
+
 ## Reminders
 
 - **Natural language**: `@remind in 20 min ...`, `tomorrow 9am`, `Sep 20 2:30pm`.
