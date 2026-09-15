@@ -57,8 +57,28 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     /// The note's height always equals its content (floor: header + one line).
     /// Grows and shrinks from the top edge down as you type. Width is the only
     /// thing you resize by hand; height is never manual.
-    func autoFitHeight(animate: Bool = false) {
-        guard !isGhosted, expandedFrame == nil, !isDocking else { return }
+    /// Nonzero while a show/hide/ghost/collapse/dock animation is running.
+    /// autoFitHeight refuses to touch the frame during that window, so it can
+    /// never fight an animation (that was the "sticky keeps falling" glitch).
+    private var frameAnimations = 0
+
+    /// Run a frame animation with autofit locked out for its duration.
+    private func animatingFrame(_ duration: Double, easing: CAMediaTimingFunctionName = .easeOut,
+                                _ animations: @escaping () -> Void,
+                                completion: @escaping () -> Void = {}) {
+        frameAnimations += 1
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: easing)
+            animations()
+        }, completionHandler: { [weak self] in
+            self?.frameAnimations -= 1
+            completion()
+        })
+    }
+
+    func autoFitHeight() {
+        guard frameAnimations == 0, !isGhosted, expandedFrame == nil, !isDocking else { return }
         panel.contentView?.layoutSubtreeIfNeeded()
         guard let layout = textView.layoutManager, let container = textView.textContainer
         else { return }
@@ -75,7 +95,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         if frame.minY < screen.visibleFrame.minY + 8 {
             frame.origin.y = screen.visibleFrame.minY + 8
         }
-        panel.setFrame(frame, display: true, animate: animate)
+        panel.setFrame(frame, display: true) // instant: no animation to fight
         note.height = target
     }
 
@@ -220,9 +240,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         let start = origin ?? target.insetBy(dx: target.width * 0.02, dy: target.height * 0.02)
         panel.setFrame(start, display: false)
         panel.alphaValue = 0
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = origin == nil ? 0.13 : 0.30
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        animatingFrame(origin == nil ? 0.13 : 0.30) { [panel] in
             panel.animator().alphaValue = 1
             panel.animator().setFrame(target, display: true)
         }
@@ -274,9 +292,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         // alphaValue makes macOS composite a bright halo around the rounded
         // corners. Fading the clip layer keeps the window opaque and clean.
         panel.hasShadow = !ghost
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.22
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        animatingFrame(0.22) { [clip, panel] in
             clip.animator().alphaValue = ghost ? 0.5 : 1.0
             panel.animator().setFrame(target, display: true)
         }
@@ -301,12 +317,10 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens[0]
         let target = NSRect(x: original.midX - 80, y: screen.frame.minY - 8,
                             width: 160, height: 36)
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.30
-            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
-            self.panel.animator().alphaValue = 0
-            self.panel.animator().setFrame(target, display: true)
-        }, completionHandler: { [weak self] in
+        animatingFrame(0.30, easing: .easeIn, { [panel] in
+            panel.animator().alphaValue = 0
+            panel.animator().setFrame(target, display: true)
+        }, completion: { [weak self] in
             guard let self else { return }
             self.panel.orderOut(nil)
             self.panel.setFrame(original, display: false)
@@ -330,20 +344,22 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     var isCollapsed: Bool { expandedFrame != nil }
 
     func toggleCollapse() {
+        var frame = panel.frame
         if let full = expandedFrame {
             expandedFrame = nil
-            var frame = panel.frame
             frame.origin.y = frame.maxY - full.height
             frame.size = full.size
-            panel.setFrame(frame, display: true, animate: true)
         } else {
             expandedFrame = panel.frame
-            var frame = panel.frame
             let collapsedHeight: CGFloat = 62
             frame.origin.y += frame.height - collapsedHeight
             frame.size.height = collapsedHeight
-            panel.setFrame(frame, display: true, animate: true)
         }
+        // setFrame(animate:) blocks until the animation ends, so hold the lock
+        // synchronously around it.
+        frameAnimations += 1
+        panel.setFrame(frame, display: true, animate: true)
+        frameAnimations -= 1
     }
 
     /// ⌃⌥B — park the sticky behind normal windows / bring it back above them.
@@ -378,10 +394,9 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         flushPendingSave()
         note.open = false
         persist(touch: false)
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.09
+        animatingFrame(0.09, { [panel] in
             panel.animator().alphaValue = 0
-        }, completionHandler: { [panel] in
+        }, completion: { [panel] in
             panel.orderOut(nil)
             panel.alphaValue = 1
         })
@@ -406,7 +421,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
 
     func noteTextDidChange() {
         touchActivity()
-        autoFitHeight(animate: true) // grow with the text as you type
+        autoFitHeight() // grow with the text as you type
         saveTimer?.invalidate()
         saveTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
             self?.saveBody()
@@ -470,7 +485,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         if !panel.isKeyWindow, fresh.body != previous.body {
             textView.string = Markup.display(fromMarkdown: fresh.body, noteID: fresh.id)
             textView.restyle()
-            autoFitHeight(animate: true)
+            autoFitHeight()
         }
         // Position and width follow disk; height re-fits to content below.
         if fresh.x != 0 || fresh.y != 0 {
@@ -929,7 +944,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         note.fontSize = reset ? 13 : min(24, max(9, note.fontSize + delta))
         persist(touch: false)
         textView.baseFontSize = CGFloat(note.fontSize)
-        autoFitHeight(animate: true)
+        autoFitHeight()
     }
 
     // MARK: Backlinks / related notes

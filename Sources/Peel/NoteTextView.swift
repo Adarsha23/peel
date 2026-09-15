@@ -616,15 +616,16 @@ final class NoteTextView: NSTextView {
 
     override func paste(_ sender: Any?) {
         let pasteboard = NSPasteboard.general
+        // Image first: a screenshot on the clipboard often carries a string
+        // rep too, so gating on "no string" made image paste silently fail.
+        if let data = NoteTextView.imageData(from: pasteboard) {
+            noteDelegate?.noteAttachImageData(data, at: selectedRange().location)
+            return
+        }
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self],
                                              options: [.urlReadingFileURLsOnly: true]) as? [URL],
            !urls.isEmpty {
             noteDelegate?.noteAttachFiles(urls, at: selectedRange().location)
-            return
-        }
-        if pasteboard.string(forType: .string) == nil,
-           let data = NoteTextView.imageData(from: pasteboard) {
-            noteDelegate?.noteAttachImageData(data, at: selectedRange().location)
             return
         }
         pasteAsPlainText(sender) // strip rogue formatting, always
@@ -634,14 +635,15 @@ final class NoteTextView: NSTextView {
         let pasteboard = sender.draggingPasteboard
         let dropPoint = convert(sender.draggingLocation, from: nil)
         let dropIndex = characterIndexForInsertion(at: dropPoint)
+        // File URLs win first (dragging a real image file keeps its name), then
+        // raw image data (a dragged screenshot), then text.
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self],
                                              options: [.urlReadingFileURLsOnly: true]) as? [URL],
            !urls.isEmpty {
             noteDelegate?.noteAttachFiles(urls, at: dropIndex)
             return true
         }
-        if pasteboard.string(forType: .string) == nil,
-           let data = NoteTextView.imageData(from: pasteboard) {
+        if let data = NoteTextView.imageData(from: pasteboard) {
             noteDelegate?.noteAttachImageData(data, at: dropIndex)
             return true
         }
