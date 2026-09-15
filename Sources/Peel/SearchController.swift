@@ -1,14 +1,28 @@
 import AppKit
 import PeelKit
 
-/// Spotlight-style search: floating field, live results, ↑↓ + ↩ to jump to a note.
+/// The command center: one field (`⌃⌥F`) that both finds notes and runs
+/// actions. Type to filter notes, or lead with a verb (new, remind, today,
+/// shot, show, hide, export) to run a command. ↑↓ to move, ↩ to run.
 final class SearchController: NSObject, NSTextFieldDelegate, NSTableViewDataSource,
                               NSTableViewDelegate, NSWindowDelegate {
+    private enum Row {
+        case command(Command)
+        case note(Note)
+    }
+
+    private struct Command {
+        let symbol: String
+        let label: String
+        let hint: String
+        let run: () -> Void
+    }
+
     private unowned let app: AppDelegate
     private var panel: SearchPanel?
     private let field = NSTextField()
     private let table = NSTableView()
-    private var results: [Note] = []
+    private var rows: [Row] = []
 
     private let panelWidth: CGFloat = 560
     private let fieldHeight: CGFloat = 54
@@ -72,7 +86,7 @@ final class SearchController: NSObject, NSTextFieldDelegate, NSTableViewDataSour
         field.drawsBackground = false
         field.focusRingType = .none
         field.font = Theme.rounded(19)
-        field.placeholderString = "Search notes…"
+        field.placeholderString = "Search notes, or type a command…"
         field.delegate = self
         field.translatesAutoresizingMaskIntoConstraints = false
 
@@ -81,7 +95,7 @@ final class SearchController: NSObject, NSTextFieldDelegate, NSTableViewDataSour
         table.backgroundColor = .clear
         table.style = .inset
         table.intercellSpacing = NSSize(width: 0, height: 2)
-        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("note"))
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("row"))
         table.addTableColumn(column)
         table.dataSource = self
         table.delegate = self
@@ -119,15 +133,83 @@ final class SearchController: NSObject, NSTextFieldDelegate, NSTableViewDataSour
     private func updateResults() {
         let query = field.stringValue.trimmingCharacters(in: .whitespaces)
         let all = app.store.loadAll()
-        results = query.isEmpty ? Array(all.prefix(8)) : Array(app.store.search(query, in: all).prefix(10))
+
+        if query.isEmpty {
+            rows = all.prefix(8).map(Row.note)
+        } else {
+            let commands = self.commands(for: query)
+            if !commands.isEmpty {
+                let rest = query.split(separator: " ", maxSplits: 1).count > 1
+                    ? String(query.split(separator: " ", maxSplits: 1)[1]) : ""
+                let matches = rest.isEmpty ? [] : app.store.search(rest, in: all).prefix(6)
+                rows = commands.map(Row.command) + matches.map(Row.note)
+            } else {
+                var built = app.store.search(query, in: all).prefix(8).map(Row.note)
+                built.append(.command(createCommand(query))) // type anything, Enter, it's a note
+                rows = built
+            }
+        }
         table.reloadData()
-        if !results.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false) }
+        if !rows.isEmpty { table.selectRowIndexes([0], byExtendingSelection: false) }
         layout()
+    }
+
+    /// Verbs at the start of the query become runnable commands.
+    private func commands(for query: String) -> [Command] {
+        let parts = query.split(separator: " ", maxSplits: 1).map(String.init)
+        let verb = parts.first?.lowercased() ?? ""
+        let rest = parts.count > 1 ? parts[1] : ""
+        switch verb {
+        case "new", "note":
+            return [Command(symbol: "plus", label: rest.isEmpty ? "New note" : "New note: \(rest)",
+                            hint: "create") { [weak self] in self?.act { $0.newSticky(body: rest) } }]
+        case "remind", "r":
+            guard !rest.isEmpty, When.detect(in: "@remind \(rest)") != nil else { return [] }
+            return [Command(symbol: "bell", label: "Remind: \(rest)", hint: "reminder") { [weak self] in
+                self?.act { $0.newSticky(body: "@remind \(rest)") }
+            }]
+        case "today":
+            return [Command(symbol: "calendar", label: "Today's notes", hint: "open") { [weak self] in
+                self?.hide()
+                let today = self?.app.store.loadAll().filter { Calendar.current.isDateInToday($0.updated) } ?? []
+                for note in today { self?.app.reveal(id: note.id, focus: false) }
+            }]
+        case "shot", "screenshot", "capture":
+            return [Command(symbol: "camera.viewfinder", label: "Screenshot into a note",
+                            hint: "capture") { [weak self] in
+                self?.hide(); self?.app.screenshotToSticky()
+            }]
+        case "show":
+            return [Command(symbol: "square.stack", label: "Show all notes", hint: "") { [weak self] in
+                self?.hide(); self?.app.showAll()
+            }]
+        case "hide":
+            return [Command(symbol: "eye.slash", label: "Hide all notes", hint: "") { [weak self] in
+                self?.hide(); self?.app.hideAll()
+            }]
+        case "export", "backup":
+            return [Command(symbol: "arrow.down.doc", label: "Export a backup zip", hint: "") { [weak self] in
+                self?.hide(); self?.app.exportBackup()
+            }]
+        default:
+            return []
+        }
+    }
+
+    private func createCommand(_ text: String) -> Command {
+        Command(symbol: "plus", label: "New note: \(text)", hint: "create") { [weak self] in
+            self?.act { $0.newSticky(body: text) }
+        }
+    }
+
+    private func act(_ body: @escaping (AppDelegate) -> Void) {
+        hide()
+        body(app)
     }
 
     private func layout() {
         guard let panel else { return }
-        let listHeight = results.isEmpty ? 0 : CGFloat(results.count) * (rowHeight + 2) + 12
+        let listHeight = rows.isEmpty ? 0 : CGFloat(rows.count) * (rowHeight + 2) + 12
         var frame = panel.frame
         let top = frame.maxY
         frame.size.height = fieldHeight + listHeight
@@ -142,36 +224,33 @@ final class SearchController: NSObject, NSTextFieldDelegate, NSTableViewDataSour
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
         switch selector {
-        case #selector(NSResponder.moveDown(_:)):
-            move(1); return true
-        case #selector(NSResponder.moveUp(_:)):
-            move(-1); return true
-        case #selector(NSResponder.insertNewline(_:)):
-            openSelection(); return true
-        case #selector(NSResponder.cancelOperation(_:)):
-            hide(); return true
-        default:
-            return false
+        case #selector(NSResponder.moveDown(_:)): move(1); return true
+        case #selector(NSResponder.moveUp(_:)): move(-1); return true
+        case #selector(NSResponder.insertNewline(_:)): runSelection(); return true
+        case #selector(NSResponder.cancelOperation(_:)): hide(); return true
+        default: return false
         }
     }
 
     private func move(_ delta: Int) {
-        guard !results.isEmpty else { return }
-        let row = max(0, min(results.count - 1, table.selectedRow + delta))
+        guard !rows.isEmpty else { return }
+        let row = max(0, min(rows.count - 1, table.selectedRow + delta))
         table.selectRowIndexes([row], byExtendingSelection: false)
         table.scrollRowToVisible(row)
     }
 
-    @objc private func rowClicked() {
-        openSelection()
-    }
+    @objc private func rowClicked() { runSelection() }
 
-    private func openSelection() {
-        let row = table.selectedRow >= 0 ? table.selectedRow : 0
-        guard row < results.count else { return }
-        let id = results[row].id
-        hide()
-        app.reveal(id: id, focus: true)
+    private func runSelection() {
+        let index = table.selectedRow >= 0 ? table.selectedRow : 0
+        guard index < rows.count else { return }
+        switch rows[index] {
+        case .command(let command):
+            command.run()
+        case .note(let note):
+            hide()
+            app.reveal(id: note.id, focus: true)
+        }
     }
 
     func windowDidResignKey(_ notification: Notification) {
@@ -180,12 +259,47 @@ final class SearchController: NSObject, NSTextFieldDelegate, NSTableViewDataSour
 
     // MARK: Table
 
-    func numberOfRows(in tableView: NSTableView) -> Int { results.count }
+    func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let note = results[row]
-        let palette = Theme.palette(note.color)
+        switch rows[row] {
+        case .command(let command): return commandCell(command)
+        case .note(let note): return noteCell(note)
+        }
+    }
 
+    private func commandCell(_ command: Command) -> NSView {
+        let cell = NSView()
+        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+        let icon = NSImageView(image: NSImage(systemSymbolName: command.symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) ?? NSImage())
+        icon.contentTintColor = .controlAccentColor
+        let label = NSTextField(labelWithString: command.label)
+        label.font = Theme.rounded(13, weight: .medium)
+        label.lineBreakMode = .byTruncatingTail
+        let hint = NSTextField(labelWithString: command.hint)
+        hint.font = Theme.rounded(11)
+        hint.textColor = .tertiaryLabelColor
+
+        for view in [icon, label, hint] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            cell.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 12),
+            icon.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 20),
+            label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 10),
+            label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: hint.leadingAnchor, constant: -10),
+            hint.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -14),
+            hint.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+        return cell
+    }
+
+    private func noteCell(_ note: Note) -> NSView {
+        let palette = Theme.palette(note.color)
         let cell = NSView()
         let dot = NSImageView(image: Theme.swatch(palette, diameter: 10))
         let title = NSTextField(labelWithString: note.title)
@@ -228,16 +342,6 @@ final class SearchController: NSObject, NSTextFieldDelegate, NSTableViewDataSour
         }
         return lines.dropFirst().first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }?
             .trimmingCharacters(in: .whitespaces) ?? ""
-    }
-
-    private static func relative(_ date: Date) -> String {
-        let seconds = Int(-date.timeIntervalSinceNow)
-        switch seconds {
-        case ..<60: return "now"
-        case ..<3600: return "\(seconds / 60)m"
-        case ..<86400: return "\(seconds / 3600)h"
-        default: return "\(seconds / 86400)d"
-        }
     }
 }
 
