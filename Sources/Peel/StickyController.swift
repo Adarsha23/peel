@@ -9,6 +9,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     private(set) var lastDiskWrite = Date.distantPast
     private(set) var lastActivity = Date()
     private(set) var isGhosted = false
+    private(set) var isDragging = false     // true while the user drags the header
     private var isDocking = false
     private var preGhostFrame: NSRect?
 
@@ -153,6 +154,30 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         header.onCollapse = { [weak self] in self?.toggleCollapse() }
         header.onGhost = { [weak self] in self?.toggleGhost() }
         header.onMinimize = { [weak self] in self?.toggleCollapse() }
+        header.onIsGhosted = { [weak self] in self?.isGhosted == true }
+        header.onDragBegan = { [weak self] in
+            guard let self, self.panel.isVisible else { return }
+            self.isDragging = true
+        }
+        header.onDragEnded = { [weak self] origin, size in
+            guard let self, self.isDragging else { return }
+            let snapped = self.app.snappedOrigin(origin, size: size, excluding: self.note.id)
+            // Persist final position BEFORE clearing isDragging so the next
+            // reconcile poll sees a fresh lastDiskWrite and doesn't reset position.
+            self.note.x = snapped.x
+            self.note.y = snapped.y
+            self.note.width = size.width
+            self.note.height = size.height
+            self.persist(touch: false)
+            self.isDragging = false
+            if snapped != origin {
+                var frame = self.panel.frame
+                frame.origin = snapped
+                self.animatingFrame(0.14) { [panel = self.panel] in
+                    panel.animator().setFrame(frame, display: true)
+                }
+            }
+        }
         header.onSnap = { [weak self] origin, size in
             guard let self else { return origin }
             return self.app.snappedOrigin(origin, size: size, excluding: self.note.id)
@@ -516,8 +541,9 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
             textView.restyle()
             autoFitHeight()
         }
-        // Don't move the frame while ghosted (ghost Y != disk Y) or mid-animation.
-        if fresh.x != 0 || fresh.y != 0, !isGhosted, frameAnimations == 0 {
+        // Don't move the frame while dragging, ghosted, or mid-animation.
+        // Dragging: panel.frame != disk frame by design; resetting would drop the note.
+        if fresh.x != 0 || fresh.y != 0, !isGhosted, !isDragging, frameAnimations == 0 {
             var frame = panel.frame
             frame.origin = NSPoint(x: fresh.x, y: fresh.y)
             frame.size.width = fresh.width
@@ -1175,6 +1201,9 @@ final class HeaderView: NSView {
     var onLinks: (() -> Void)?
     var onSnap: ((NSPoint, NSSize) -> NSPoint)?
     var onMinimize: (() -> Void)?
+    var onIsGhosted: (() -> Bool)?
+    var onDragBegan: (() -> Void)?
+    var onDragEnded: ((NSPoint, NSSize) -> Void)?
 
     private var dragStartMouse: NSPoint?
     private var dragStartOrigin: NSPoint?
@@ -1197,7 +1226,7 @@ final class HeaderView: NSView {
 
     private let hideButton = HeaderView.symbolButton("xmark", size: 9)
     private let ghostButton = HeaderView.symbolButton("eye", size: 10)
-    private let minimizeButton = HeaderView.symbolButton("minus", size: 10)
+    private let minimizeButton = HeaderView.symbolButton("chevron.down", size: 9)
     private let newButton = HeaderView.symbolButton("plus", size: 10)
     private let dotButton = NSButton()
     private let linkButton: NSButton = {
@@ -1235,7 +1264,7 @@ final class HeaderView: NSView {
         ghostButton.toolTip = "See through (⌃⌥G), click the note to bring it back"
         minimizeButton.target = self
         minimizeButton.action = #selector(minimizePressed)
-        minimizeButton.toolTip = "Collapse to header (double-click to expand)"
+        minimizeButton.toolTip = "Collapse note (⌘− or double-click header to expand)"
         newButton.target = self
         newButton.action = #selector(newPressed)
         newButton.toolTip = "New sticky (⌘T)"
@@ -1320,8 +1349,12 @@ final class HeaderView: NSView {
             onCollapse?()
             return
         }
+        // Don't start a drag while ghosted: the click is un-ghosting the note.
+        // Dragging from the ghost frame (wrong origin + simultaneous animation) causes glitch.
+        guard onIsGhosted?() != true else { return }
         dragStartMouse = NSEvent.mouseLocation
         dragStartOrigin = window?.frame.origin
+        onDragBegan?()
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -1342,22 +1375,16 @@ final class HeaderView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        let wasDragging = dragStartMouse != nil
         defer {
             dragStartMouse = nil
             dragStartOrigin = nil
             lastDragMouse = nil
         }
-        guard dragStartMouse != nil, let window else { return }
-        // Settle into alignment with a soft slide instead of a teleport.
-        let snapped = onSnap?(window.frame.origin, window.frame.size) ?? window.frame.origin
-        guard snapped != window.frame.origin else { return }
-        var frame = window.frame
-        frame.origin = snapped
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.14
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            window.animator().setFrame(frame, display: true)
-        }
+        guard wasDragging, let window else { return }
+        // Hand off to the controller for snap settle (inside animatingFrame)
+        // and immediate persist so the reconcile poll sees a fresh lastDiskWrite.
+        onDragEnded?(window.frame.origin, window.frame.size)
     }
 
     override func updateTrackingAreas() {
