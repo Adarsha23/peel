@@ -48,7 +48,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         header.locked = note.locked
         header.onLinks = { [weak self] in self?.showLinksMenu() }
         refreshBacklinks()
-        autoFitHeight() // open minimally: fit the panel to its content
+        resetHeightToContent() // open minimally: exact content height
         if note.sunk { panel.level = .normal }
     }
 
@@ -87,7 +87,11 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         let body = max(minContentHeight, used + 6)
         let stripHeight: CGFloat = strip.isHidden ? 0 : 56
         let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens[0]
-        let target = min(headerHeight + body + stripHeight, screen.visibleFrame.height * 0.7)
+        let contentTarget = min(headerHeight + body + stripHeight, screen.visibleFrame.height * 0.7)
+        // Only grow — never snap back below what the user has manually dragged to.
+        // Use max(contentTarget, currentHeight) so the note expands as content grows
+        // but a large user-set frame stays until they resize again.
+        let target = max(contentTarget, panel.frame.height)
         guard abs(target - panel.frame.height) > 1 else { return }
         var frame = panel.frame
         frame.origin.y = frame.maxY - target // top edge stays put
@@ -95,7 +99,31 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         if frame.minY < screen.visibleFrame.minY + 8 {
             frame.origin.y = screen.visibleFrame.minY + 8
         }
-        panel.setFrame(frame, display: true) // instant: no animation to fight
+        panel.setFrame(frame, display: true)
+        note.height = target
+    }
+
+    /// Called on show/reopen: resize exactly to content (may shrink if content
+    /// was deleted). This is the only place the note can shrink.
+    private func resetHeightToContent() {
+        guard frameAnimations == 0, !isGhosted, expandedFrame == nil, !isDocking else { return }
+        panel.contentView?.layoutSubtreeIfNeeded()
+        guard let layout = textView.layoutManager, let container = textView.textContainer
+        else { return }
+        layout.ensureLayout(for: container)
+        let used = layout.usedRect(for: container).height + textView.textContainerInset.height * 2
+        let body = max(minContentHeight, used + 6)
+        let stripHeight: CGFloat = strip.isHidden ? 0 : 56
+        let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens[0]
+        let target = min(headerHeight + body + stripHeight, screen.visibleFrame.height * 0.7)
+        guard abs(target - panel.frame.height) > 1 else { return }
+        var frame = panel.frame
+        frame.origin.y = frame.maxY - target
+        frame.size.height = target
+        if frame.minY < screen.visibleFrame.minY + 8 {
+            frame.origin.y = screen.visibleFrame.minY + 8
+        }
+        panel.setFrame(frame, display: true)
         note.height = target
     }
 
@@ -124,6 +152,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         header.onMenu = { [weak self] button in self?.showContextMenu(from: button) }
         header.onCollapse = { [weak self] in self?.toggleCollapse() }
         header.onGhost = { [weak self] in self?.toggleGhost() }
+        header.onMinimize = { [weak self] in self?.toggleCollapse() }
         header.onSnap = { [weak self] origin, size in
             guard let self else { return origin }
             return self.app.snappedOrigin(origin, size: size, excluding: self.note.id)
@@ -235,7 +264,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
             return
         }
         panel.orderFrontRegardless()
-        autoFitHeight() // measure now that the view is on screen and laid out
+        resetHeightToContent() // fresh open → exact content size
         let target = panel.frame
         let start = origin ?? target.insetBy(dx: target.width * 0.02, dy: target.height * 0.02)
         panel.setFrame(start, display: false)
@@ -487,14 +516,14 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
             textView.restyle()
             autoFitHeight()
         }
-        // Position and width follow disk; height re-fits to content below.
-        if fresh.x != 0 || fresh.y != 0 {
+        // Don't move the frame while ghosted (ghost Y != disk Y) or mid-animation.
+        if fresh.x != 0 || fresh.y != 0, !isGhosted, frameAnimations == 0 {
             var frame = panel.frame
             frame.origin = NSPoint(x: fresh.x, y: fresh.y)
             frame.size.width = fresh.width
             if frame != panel.frame { panel.setFrame(frame, display: true) }
         }
-        autoFitHeight()
+        if !isGhosted { autoFitHeight() }
         if fresh.open, !panel.isVisible { show(focus: false) }
         reloadAttachments()
         refreshBacklinks()
@@ -558,7 +587,9 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     func noteAttachImageData(_ data: Data, at index: Int?) {
         guard let stored = store.attach(data: data, named: nextIndexedName(prefix: "image"),
                                         to: note.id) else { return }
-        textView.insertPlain("⟦\(stored.lastPathComponent)⟧ ", at: index)
+        var token = "⟦\(stored.lastPathComponent)⟧"
+        if let url = app.urlForScreenshot(data) { token += " (\(url))" }
+        textView.insertPlain(token + " ", at: index)
         reloadAttachments()
         focusAfterAttach()
     }
@@ -830,6 +861,9 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         add("open", "show note file in Finder")
         add("help", "shortcut cheatsheet")
         popup(menu, atCharacter: location)
+        // After the modal menu exits (command or esc), give focus back to the editor
+        panel.makeKey()
+        panel.makeFirstResponder(textView)
     }
 
     @objc private func slashPicked(_ sender: NSMenuItem) {
@@ -842,6 +876,9 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
             }
         }
         _ = noteCommand(verb)
+        // NSMenu.popUp is modal; restore focus so the note stays usable
+        panel.makeKey()
+        panel.makeFirstResponder(textView)
     }
 
     @objc private func remindOptionPicked(_ sender: NSMenuItem) {
@@ -1137,6 +1174,7 @@ final class HeaderView: NSView {
     var onGhost: (() -> Void)?
     var onLinks: (() -> Void)?
     var onSnap: ((NSPoint, NSSize) -> NSPoint)?
+    var onMinimize: (() -> Void)?
 
     private var dragStartMouse: NSPoint?
     private var dragStartOrigin: NSPoint?
@@ -1159,6 +1197,7 @@ final class HeaderView: NSView {
 
     private let hideButton = HeaderView.symbolButton("xmark", size: 9)
     private let ghostButton = HeaderView.symbolButton("eye", size: 10)
+    private let minimizeButton = HeaderView.symbolButton("minus", size: 10)
     private let newButton = HeaderView.symbolButton("plus", size: 10)
     private let dotButton = NSButton()
     private let linkButton: NSButton = {
@@ -1194,6 +1233,9 @@ final class HeaderView: NSView {
         ghostButton.target = self
         ghostButton.action = #selector(ghostPressed)
         ghostButton.toolTip = "See through (⌃⌥G), click the note to bring it back"
+        minimizeButton.target = self
+        minimizeButton.action = #selector(minimizePressed)
+        minimizeButton.toolTip = "Collapse to header (double-click to expand)"
         newButton.target = self
         newButton.action = #selector(newPressed)
         newButton.toolTip = "New sticky (⌘T)"
@@ -1209,8 +1251,10 @@ final class HeaderView: NSView {
         hideButton.translatesAutoresizingMaskIntoConstraints = false
         newButton.translatesAutoresizingMaskIntoConstraints = false
         ghostButton.translatesAutoresizingMaskIntoConstraints = false
+        minimizeButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(hideButton)
         addSubview(newButton)
+        addSubview(minimizeButton)
         addSubview(ghostButton)
         addSubview(dotButton)
         addSubview(lockIndicator)
@@ -1228,12 +1272,15 @@ final class HeaderView: NSView {
             dotButton.heightAnchor.constraint(equalToConstant: 14),
             newButton.trailingAnchor.constraint(equalTo: dotButton.leadingAnchor, constant: -8),
             newButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            ghostButton.trailingAnchor.constraint(equalTo: newButton.leadingAnchor, constant: -8),
+            minimizeButton.trailingAnchor.constraint(equalTo: newButton.leadingAnchor, constant: -8),
+            minimizeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            ghostButton.trailingAnchor.constraint(equalTo: minimizeButton.leadingAnchor, constant: -8),
             ghostButton.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
         hideButton.alphaValue = 0
         newButton.alphaValue = 0
         ghostButton.alphaValue = 0
+        minimizeButton.alphaValue = 0
         dotButton.alphaValue = 0.5
     }
 
@@ -1262,6 +1309,7 @@ final class HeaderView: NSView {
     @objc private func hidePressed() { onHide?() }
     @objc private func newPressed() { onNew?() }
     @objc private func ghostPressed() { onGhost?() }
+    @objc private func minimizePressed() { onMinimize?() }
     @objc private func linksPressed() { onLinks?() }
     @objc private func menuPressed() { onMenu?(dotButton) }
 
@@ -1329,6 +1377,7 @@ final class HeaderView: NSView {
             hideButton.animator().alphaValue = hovering ? 1 : 0
             newButton.animator().alphaValue = hovering ? 1 : 0
             ghostButton.animator().alphaValue = hovering ? 1 : 0
+            minimizeButton.animator().alphaValue = hovering ? 1 : 0
             dotButton.animator().alphaValue = hovering ? 1 : 0.5
         }
     }

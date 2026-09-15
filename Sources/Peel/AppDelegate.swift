@@ -51,7 +51,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let help = HelpController()
     private lazy var shelf = ShelfController(app: self)
     private let reminderAlert = ReminderAlert()
+    private let clipboardWatcher = ClipboardWatcher()
     private var colorRotation = 0
+    private var recentNoteOrder: [String] = [] // MRU for ⌃Tab switch
     private var gitTimer: Timer?
     private var idleTimer: Timer?
     private var config = Config()
@@ -99,6 +101,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         shelf.start(edge: ShelfEdge(rawValue: config.shelfEdge ?? "") ?? .bottom)
+        clipboardWatcher.start()
+        clipboardWatcher.onCapture = { _, _ in } // URL stored in cache, used at paste time
         idleTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.idleSweep()
         }
@@ -135,6 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case "help": showHelp()
         case "clip": clipCapture()
         case "shelf": if let screen = NSScreen.main { shelf.showManually(on: screen) }
+        case "tab-next": cycleToNextNote()
         default: break
         }
     }
@@ -175,6 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func reveal(id: String, focus: Bool, from origin: NSRect? = nil) {
+        trackRecent(id)
         if let controller = controllers[id] {
             controller.show(focus: focus, from: origin)
             return
@@ -348,6 +354,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func stickyWasArchived(id: String) {
         controllers.removeValue(forKey: id)
         expiry.cancel(for: id)
+        recentNoteOrder.removeAll { $0 == id }
+    }
+
+    private func trackRecent(_ id: String) {
+        recentNoteOrder.removeAll { $0 == id }
+        recentNoteOrder.insert(id, at: 0)
+        if recentNoteOrder.count > 20 { recentNoteOrder.removeLast() }
+    }
+
+    /// ⌃Tab: cycle through notes in most-recently-used order (Arc-style).
+    func cycleToNextNote() {
+        let visible = recentNoteOrder.filter { controllers[$0]?.panel.isVisible == true }
+        guard visible.count > 1 else {
+            // No visible notes in history: open the next-most-recent overall
+            if let next = recentNoteOrder.first(where: { controllers[$0] == nil || controllers[$0]?.panel.isVisible == false }) {
+                reveal(id: next, focus: true)
+            } else if let next = store.loadAll().first(where: { $0.id != recentNoteOrder.first }) {
+                reveal(id: next.id, focus: true)
+            }
+            return
+        }
+        // Find the currently focused one and advance to the next
+        let current = (NSApp.keyWindow as? StickyPanel)?.sticky?.note.id ?? visible.first!
+        let idx = visible.firstIndex(of: current) ?? 0
+        let next = visible[(idx + 1) % visible.count]
+        reveal(id: next, focus: true)
+    }
+
+    func urlForScreenshot(_ data: Data) -> String? {
+        clipboardWatcher.url(for: data)
     }
 
     /// An @expire time arrived: fade the sticky out and archive it.
