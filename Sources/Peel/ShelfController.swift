@@ -32,6 +32,7 @@ final class ShelfController {
 
     private(set) var edge: ShelfEdge = .bottom
     private var thickness: CGFloat { edge.isHorizontal ? 40 : 220 }
+    private var edgeDwellStart: Date?   // cursor must sit at the edge for 0.3s
 
     init(app: AppDelegate) {
         self.app = app
@@ -78,9 +79,14 @@ final class ShelfController {
             away = mouse.x < f.maxX - thickness - 60
         }
         if !shown, onEdge {
-            show(on: screen)
-        } else if shown, away, Date() > holdUntil {
-            hide()
+            if edgeDwellStart == nil { edgeDwellStart = Date() }
+            if Date().timeIntervalSince(edgeDwellStart!) >= 0.3 {
+                edgeDwellStart = nil
+                show(on: screen)
+            }
+        } else {
+            edgeDwellStart = nil
+            if shown, away, Date() > holdUntil { hide() }
         }
     }
 

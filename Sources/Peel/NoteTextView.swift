@@ -45,6 +45,7 @@ final class NoteTextView: NSTextView {
     private var tokenLinks: [(range: NSRange, url: URL)] = []
     private var remindTokens: [(token: NSRange, dateRange: NSRange?)] = []
     private var wikiLinks: [(range: NSRange, title: String)] = []
+    private var slashMenuTimer: Timer?
 
     /// Per-sticky zoom (⌘+ / ⌘−); all derived fonts scale from this.
     var baseFontSize: CGFloat = 13 {
@@ -459,7 +460,21 @@ final class NoteTextView: NSTextView {
         let prefix = ns.substring(with: NSRange(location: lineStart,
                                                 length: selection.location - lineStart))
         guard prefix.trimmingCharacters(in: .whitespaces) == "/" else { return }
-        noteDelegate?.noteSlashTyped(slashAt: selection.location - 1)
+        // 0.35 s debounce: if the user keeps typing (e.g. "/remind ...") the
+        // menu never opens. Only show when they pause on "/" alone.
+        let slashAt = selection.location - 1
+        slashMenuTimer?.invalidate()
+        slashMenuTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            let cur = self.string as NSString
+            let sel = self.selectedRange()
+            var ls = 0
+            cur.getLineStart(&ls, end: nil, contentsEnd: nil, for: sel)
+            let stillJustSlash = cur.substring(with: NSRange(location: ls, length: sel.location - ls))
+                .trimmingCharacters(in: .whitespaces) == "/"
+            guard stillJustSlash else { return }
+            self.noteDelegate?.noteSlashTyped(slashAt: slashAt)
+        }
     }
 
     /// "[] " → "☐ ", "[x] " → "☑ ", "- " → "• " when typed at the start of a line.
@@ -654,6 +669,13 @@ final class NoteTextView: NSTextView {
         if let data = pasteboard.data(forType: .png) { return data }
         if let data = pasteboard.data(forType: .tiff),
            let rep = NSBitmapImageRep(data: data) {
+            return rep.representation(using: .png, properties: [:])
+        }
+        // NSImage(pasteboard:) handles all remaining image types that macOS
+        // screenshots produce (public.heic, com.apple.pict, etc.)
+        if let img = NSImage(pasteboard: pasteboard),
+           let tiff = img.tiffRepresentation,
+           let rep = NSBitmapImageRep(data: tiff) {
             return rep.representation(using: .png, properties: [:])
         }
         return nil
