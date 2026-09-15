@@ -10,6 +10,12 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     private(set) var lastActivity = Date()
     private(set) var isGhosted = false
     private var isDocking = false
+    private var preGhostFrame: NSRect?
+
+    /// The header row is the floor: a ghosted sticky collapses to exactly this,
+    /// and a fresh note opens at header + one line.
+    private let headerHeight: CGFloat = 26
+    private let minContentHeight: CGFloat = 34
 
     private unowned let app: AppDelegate
     private let textView = NoteTextView()
@@ -38,7 +44,35 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         textView.string = Markup.display(fromMarkdown: note.body, noteID: note.id)
         textView.restyle()
         reloadAttachments()
+        header.locked = note.locked
+        autoFitHeight() // open minimally: fit the panel to its content
         if note.sunk { panel.level = .normal }
+    }
+
+    // MARK: Auto-height — the sticky is exactly as tall as its content
+
+    /// Fit the panel height to the text (min one line) unless the user has
+    /// dragged it to a size they want. Grows/shrinks from the top edge down.
+    func autoFitHeight(animate: Bool = false) {
+        guard !note.userSized, !isGhosted, expandedFrame == nil, !isDocking else { return }
+        panel.contentView?.layoutSubtreeIfNeeded()
+        guard let layout = textView.layoutManager, let container = textView.textContainer
+        else { return }
+        layout.ensureLayout(for: container)
+        let used = layout.usedRect(for: container).height + textView.textContainerInset.height * 2
+        let body = max(minContentHeight, used + 6)
+        let stripHeight: CGFloat = strip.isHidden ? 0 : 56
+        let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens[0]
+        let target = min(headerHeight + body + stripHeight, screen.visibleFrame.height * 0.7)
+        guard abs(target - panel.frame.height) > 1 else { return }
+        var frame = panel.frame
+        frame.origin.y = frame.maxY - target // top edge stays put
+        frame.size.height = target
+        if frame.minY < screen.visibleFrame.minY + 8 {
+            frame.origin.y = screen.visibleFrame.minY + 8
+        }
+        panel.setFrame(frame, display: true, animate: animate)
+        note.height = target
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -200,15 +234,39 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         }
     }
 
-    /// Translucent when idle so the content underneath stays readable.
+    /// Ghost = translucent AND collapsed to just the header row, so an idle
+    /// sticky is a thin bar you can read straight through. A click restores it.
     func setGhost(_ ghost: Bool, force: Bool = false) {
         guard ghost != isGhosted, panel.isVisible, !isDocking else { return }
+        if ghost, note.locked { return } // pinned opaque never fades
         if ghost, panel.isKeyWindow, !force { return }
+        if ghost, expandedFrame != nil { return } // already collapsed by hand
         isGhosted = ghost
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.25
-            panel.animator().alphaValue = ghost ? 0.42 : 1.0
+        let target: NSRect
+        if ghost {
+            preGhostFrame = panel.frame
+            var frame = panel.frame
+            frame.origin.y = frame.maxY - headerHeight
+            frame.size.height = headerHeight
+            target = frame
+        } else {
+            target = preGhostFrame ?? panel.frame
+            preGhostFrame = nil
         }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = ghost ? 0.5 : 1.0
+            panel.animator().setFrame(target, display: true)
+        }
+    }
+
+    /// ⌃⌥L, /lock, or the menu: pin the sticky opaque (never ghosts).
+    func toggleLock() {
+        note.locked.toggle()
+        persist(touch: false)
+        if note.locked, isGhosted { setGhost(false) }
+        header.locked = note.locked
     }
 
     /// Minimize-to-shelf: shrink toward the bottom edge and fade, like the Dock.
@@ -327,6 +385,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
 
     func noteTextDidChange() {
         touchActivity()
+        autoFitHeight(animate: true) // grow with the text as you type
         saveTimer?.invalidate()
         saveTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
             self?.saveBody()
@@ -352,8 +411,9 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     }
 
     private func captureFrame() {
-        if let full = expandedFrame {
-            // Collapsed: persist the expanded geometry at the current position.
+        // While ghosted or hand-collapsed the panel is a thin bar; persist the
+        // real geometry (top edge fixed, so maxY is stable through the shrink).
+        if let full = preGhostFrame ?? expandedFrame {
             note.x = panel.frame.origin.x
             note.y = panel.frame.maxY - full.height
             note.width = full.width
@@ -380,12 +440,17 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         if fresh.sunk != previous.sunk {
             fresh.sunk ? sinkBehind() : floatUp()
         }
+        if fresh.locked != previous.locked {
+            header.locked = fresh.locked
+            if fresh.locked, isGhosted { setGhost(false) }
+        }
         if !panel.isKeyWindow, fresh.body != previous.body {
             textView.string = Markup.display(fromMarkdown: fresh.body, noteID: fresh.id)
             textView.restyle()
+            autoFitHeight(animate: true)
         }
         let diskFrame = NSRect(x: fresh.x, y: fresh.y, width: fresh.width, height: fresh.height)
-        if diskFrame != panel.frame, fresh.x != 0 || fresh.y != 0 {
+        if fresh.userSized, diskFrame != panel.frame, fresh.x != 0 || fresh.y != 0 {
             panel.setFrame(diskFrame, display: true)
         }
         if fresh.open, !panel.isVisible { show(focus: false) }
@@ -394,8 +459,15 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
 
     // MARK: NSWindowDelegate
 
+    func windowDidResize(_ notification: Notification) {
+        touchActivity()
+        if panel.inLiveResize, !note.userSized {
+            note.userSized = true // a hand-drag pins the size; stop auto-fitting
+        }
+        scheduleFrameSave()
+    }
+
     func windowDidMove(_ notification: Notification) { touchActivity(); scheduleFrameSave() }
-    func windowDidResize(_ notification: Notification) { touchActivity(); scheduleFrameSave() }
 
     func windowDidBecomeKey(_ notification: Notification) {
         touchActivity()
@@ -484,6 +556,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         case "hide": run = { [weak self] in self?.hide() }
         case "behind", "park", "front", "float": run = { [weak self] in self?.toggleLayer() }
         case "ghost", "peek": run = { [weak self] in self?.toggleGhost() }
+        case "lock", "pin", "unlock": run = { [weak self] in self?.toggleLock() }
         case "archive", "done": run = { [weak self] in self?.archive() }
         case "shot", "screenshot": run = { [weak self] in self?.captureScreenshot() }
         case "todo": run = { [weak self] in self?.textView.toggleTodo(nil) }
@@ -810,6 +883,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         note.fontSize = reset ? 13 : min(24, max(9, note.fontSize + delta))
         persist(touch: false)
         textView.baseFontSize = CGFloat(note.fontSize)
+        autoFitHeight(animate: true)
     }
 
     // MARK: Wiki links
@@ -859,6 +933,12 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
             menu.addItem(item)
         }
         menu.addItem(.separator())
+        let lockItem = NSMenuItem(title: note.locked ? "Unlock (allow fading)" : "Lock Opaque",
+                                  action: #selector(lockPicked), keyEquivalent: "l")
+        lockItem.keyEquivalentModifierMask = [.control, .option]
+        lockItem.state = note.locked ? .on : .off
+        lockItem.target = self
+        menu.addItem(lockItem)
         let layerItem = NSMenuItem(title: note.sunk ? "Bring Forward" : "Push Behind Windows",
                                    action: #selector(layerPicked), keyEquivalent: "b")
         layerItem.keyEquivalentModifierMask = [.control, .option]
@@ -875,6 +955,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     }
 
     @objc private func layerPicked() { toggleLayer() }
+    @objc private func lockPicked() { toggleLock() }
 
     @objc private func colorPicked(_ sender: NSMenuItem) {
         if let name = sender.representedObject as? String { setColor(name) }
@@ -907,6 +988,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         case .search: app.showSearch()
         case .layerToggle: toggleLayer()
         case .ghostToggle: toggleGhost()
+        case .lockToggle: toggleLock()
         case .screenshot: captureScreenshot()
         case .archive: archive()
         case .bold: textView.toggleWrap("**")
@@ -957,11 +1039,27 @@ final class HeaderView: NSView {
     private var dragStartOrigin: NSPoint?
     private var lastDragMouse: NSPoint?
     var dotColor: NSColor = .controlAccentColor { didSet { dotButton.image = dotImage() } }
+    /// Pinned-opaque state: a small lock glyph stays visible even without hover.
+    var locked = false {
+        didSet {
+            lockIndicator.isHidden = !locked
+            ghostButton.isHidden = locked // ghosting is disabled while locked
+        }
+    }
 
     private let hideButton = HeaderView.symbolButton("xmark", size: 9)
     private let ghostButton = HeaderView.symbolButton("eye", size: 10)
     private let newButton = HeaderView.symbolButton("plus", size: 10)
     private let dotButton = NSButton()
+    private let lockIndicator: NSImageView = {
+        let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
+        let view = NSImageView(image: NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Locked")?
+            .withSymbolConfiguration(config) ?? NSImage())
+        view.contentTintColor = .tertiaryLabelColor
+        view.isHidden = true
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -988,9 +1086,12 @@ final class HeaderView: NSView {
         addSubview(newButton)
         addSubview(ghostButton)
         addSubview(dotButton)
+        addSubview(lockIndicator)
         NSLayoutConstraint.activate([
             hideButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 9),
             hideButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            lockIndicator.leadingAnchor.constraint(equalTo: hideButton.trailingAnchor, constant: 8),
+            lockIndicator.centerYAnchor.constraint(equalTo: centerYAnchor),
             dotButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             dotButton.centerYAnchor.constraint(equalTo: centerYAnchor),
             dotButton.widthAnchor.constraint(equalToConstant: 14),

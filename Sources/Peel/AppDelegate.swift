@@ -193,7 +193,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for controller in controllers.values {
             guard controller.panel.isVisible,
                   !controller.panel.isKeyWindow,
-                  !controller.note.sunk else { continue }
+                  !controller.note.sunk,
+                  !controller.note.locked else { continue }
             // hovering delays the fade while you read the note, but once
             // ghosted only a click brings it back
             if !controller.isGhosted,

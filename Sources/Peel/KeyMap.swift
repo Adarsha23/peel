@@ -6,7 +6,7 @@ import AppKit
 /// ignored so a stale config never breaks launch.
 struct KeyMap {
     enum Action: String, CaseIterable {
-        case newSticky, hide, hideAll, toggleTodo, search, layerToggle, ghostToggle
+        case newSticky, hide, hideAll, toggleTodo, search, layerToggle, ghostToggle, lockToggle
         case screenshot, archive, bold, italic, code, strike, highlight
         case zoomIn, zoomOut, zoomReset
     }
@@ -19,6 +19,7 @@ struct KeyMap {
         .search: "ctrl+opt+f",
         .layerToggle: "ctrl+opt+b",
         .ghostToggle: "ctrl+opt+g",
+        .lockToggle: "ctrl+opt+l",
         .screenshot: "ctrl+opt+s",
         .archive: "ctrl+opt+a",
         .bold: "cmd+b",
