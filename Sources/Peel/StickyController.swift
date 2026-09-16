@@ -43,8 +43,10 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         applyPalette()
         textView.attachmentsDir = store.attachmentsDir(for: note.id)
         textView.baseFontSize = CGFloat(note.fontSize)
+        textView.inlineImages = note.inlineImages
         textView.string = Markup.display(fromMarkdown: note.body, noteID: note.id)
         textView.restyle()
+        textView.applyInlineImages()
         reloadAttachments()
         header.locked = note.locked
         header.onLinks = { [weak self] in self?.showLinksMenu() }
@@ -492,7 +494,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     }
 
     private func saveBody() {
-        let markdown = Markup.markdown(fromDisplay: textView.string, noteID: note.id)
+        let markdown = Markup.markdown(fromDisplay: textView.displayStringWithTokens, noteID: note.id)
         guard markdown != note.body else { return }
         note.body = markdown
         persist(touch: true)
@@ -536,10 +538,16 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
             header.locked = fresh.locked
             if fresh.locked, isGhosted { setGhost(false) }
         }
+        if fresh.inlineImages != previous.inlineImages {
+            textView.inlineImages = fresh.inlineImages
+        }
         if !panel.isKeyWindow, fresh.body != previous.body {
             textView.string = Markup.display(fromMarkdown: fresh.body, noteID: fresh.id)
             textView.restyle()
+            textView.applyInlineImages()
             autoFitHeight()
+        } else if fresh.inlineImages != previous.inlineImages {
+            textView.applyInlineImages()
         }
         // Don't move the frame while dragging, ghosted, or mid-animation.
         // Dragging: panel.frame != disk frame by design; resetting would drop the note.
@@ -567,6 +575,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     // animations, so checking it in windowDidResize made autofit fight every
     // show/ghost/dock animation — that was the "falling" glitch.
     func windowDidEndLiveResize(_ notification: Notification) {
+        textView.updateInlineImageBounds()
         autoFitHeight()
     }
 
@@ -1008,6 +1017,76 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         persist(touch: false)
         textView.baseFontSize = CGFloat(note.fontSize)
         autoFitHeight()
+    }
+
+    // MARK: Inline images
+
+    /// Shows the expand/open action menu for a ⟦token⟧ click.
+    func noteImageTokenClicked(filename: String, url: URL, at screenPoint: NSPoint) {
+        let isInline = note.inlineImages.contains(filename)
+        let menu = NSMenu()
+        let expandTitle = isInline ? "Collapse to Token" : "Show Inline"
+        let expandItem = NSMenuItem(title: expandTitle, action: #selector(toggleInlinePicked(_:)),
+                                    keyEquivalent: "")
+        expandItem.representedObject = filename
+        expandItem.target = self
+        menu.addItem(expandItem)
+        menu.addItem(NSMenuItem(title: "Open in Preview", action: #selector(openImagePicked(_:)),
+                                 keyEquivalent: "").also { $0.representedObject = url; $0.target = self })
+        menu.popUp(positioning: nil, at: screenPoint, in: nil)
+    }
+
+    /// Shows the collapse/open action menu when an inline image is clicked.
+    func noteInlineImageClicked(filename: String, url: URL, at screenPoint: NSPoint) {
+        let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "Collapse to Token", action: #selector(toggleInlinePicked(_:)),
+                                 keyEquivalent: "").also { $0.representedObject = filename; $0.target = self })
+        menu.addItem(NSMenuItem(title: "Open in Preview", action: #selector(openImagePicked(_:)),
+                                 keyEquivalent: "").also { $0.representedObject = url; $0.target = self })
+        menu.popUp(positioning: nil, at: screenPoint, in: nil)
+    }
+
+    @objc private func toggleInlinePicked(_ sender: NSMenuItem) {
+        guard let filename = sender.representedObject as? String else { return }
+        if note.inlineImages.contains(filename) {
+            // Collapse: convert attachment back to token in-place
+            note.inlineImages.remove(filename)
+            textView.inlineImages = note.inlineImages
+            collapseInlineImage(filename: filename)
+        } else {
+            // Expand
+            note.inlineImages.insert(filename)
+            textView.inlineImages = note.inlineImages
+            textView.applyInlineImages()
+        }
+        persist(touch: true)
+        // Height will re-fit automatically via autoFitHeight from noteTextDidChange
+    }
+
+    @objc private func openImagePicked(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        NSWorkspace.shared.open(url.resolvingSymlinksInPath())
+    }
+
+    /// Convert an NSTextAttachment for filename back to a ⟦token⟧ text
+    /// without reloading the entire note body (preserves any unsaved edits).
+    private func collapseInlineImage(filename: String) {
+        guard let storage = textView.textStorage else { return }
+        textView.isApplyingInlineImages = true
+        storage.beginEditing()
+        let fullRange = NSRange(location: 0, length: storage.length)
+        // enumerate in reverse to keep positions valid after replacement
+        var ranges: [NSRange] = []
+        storage.enumerateAttribute(.attachment, in: fullRange) { value, range, _ in
+            guard (value as? InlineImageAttachment)?.filename == filename else { return }
+            ranges.append(range)
+        }
+        for range in ranges.reversed() {
+            storage.replaceCharacters(in: range, with: "⟦\(filename)⟧")
+        }
+        storage.endEditing()
+        textView.isApplyingInlineImages = false
+        textView.restyle()
     }
 
     // MARK: Backlinks / related notes

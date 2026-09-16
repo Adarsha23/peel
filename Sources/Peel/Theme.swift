@@ -82,3 +82,8 @@ enum Theme {
         return image
     }
 }
+
+
+extension NSMenuItem {
+    @discardableResult func also(_ block: (NSMenuItem) -> Void) -> NSMenuItem { block(self); return self }
+}
