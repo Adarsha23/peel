@@ -19,6 +19,8 @@ public struct Note: Equatable {
     public var fontSize: Double
     /// Pinned opaque: never fades to a ghost, even when idle.
     public var locked: Bool
+    /// Filenames shown as full-width inline blocks (Notion-style). Works for any existing note.
+    public var inlineImages: Set<String>
     public var body: String
 
     public static let defaultWidth = 340.0
@@ -31,6 +33,7 @@ public struct Note: Equatable {
                 created: Date = Date(), updated: Date = Date(),
                 open: Bool = true, sunk: Bool = false, fontSize: Double = 13,
                 locked: Bool = false,
+                inlineImages: Set<String> = [],
                 body: String = "") {
         self.id = id
         self.color = color
@@ -41,6 +44,7 @@ public struct Note: Equatable {
         self.sunk = sunk
         self.fontSize = fontSize
         self.locked = locked
+        self.inlineImages = inlineImages
         self.body = body
     }
 
@@ -135,6 +139,8 @@ public extension Note {
             case "sunk": note.sunk = (value == "true")
             case "fontSize": note.fontSize = Double(value) ?? 13
             case "locked": note.locked = (value == "true")
+            case "inlineImages":
+                note.inlineImages = Set(value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
             default: break
             }
         }
@@ -145,7 +151,9 @@ public extension Note {
     }
 
     func serialize() -> String {
-        """
+        let inlineLine = inlineImages.isEmpty ? ""
+            : "\n        inlineImages: \(inlineImages.sorted().joined(separator: ", "))"
+        return """
         ---
         id: \(id)
         color: \(color)
@@ -158,7 +166,7 @@ public extension Note {
         open: \(open)
         sunk: \(sunk)
         fontSize: \(Int(fontSize.rounded()))
-        locked: \(locked)
+        locked: \(locked)\(inlineLine)
         ---
 
         \(body)

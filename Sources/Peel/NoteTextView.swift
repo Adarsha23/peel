@@ -1,6 +1,30 @@
 import AppKit
 import PeelKit
 
+/// Full-width inline image block. Width tracks the note; height is proportional.
+/// On disk the note stores ⟦filename⟧ — this attachment is the live display.
+final class InlineImageAttachment: NSTextAttachment {
+    let filename: String
+    let imageURL: URL
+
+    init(filename: String, imageURL: URL, maxWidth: CGFloat) {
+        self.filename = filename; self.imageURL = imageURL
+        super.init(data: nil, ofType: nil)
+        reload(maxWidth: maxWidth)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func reload(maxWidth: CGFloat) {
+        guard let img = NSImage(contentsOf: imageURL) else {
+            bounds = CGRect(x: 4, y: 0, width: max(60, maxWidth - 8), height: 60); return
+        }
+        image = img
+        let w = min(img.size.width, maxWidth - 8)
+        let h = img.size.height * (w / img.size.width)
+        bounds = CGRect(x: 4, y: 0, width: w, height: h)
+    }
+}
+
 protocol NoteTextViewDelegate: AnyObject {
     func noteTextDidChange()
     func noteAttachFiles(_ urls: [URL], at index: Int?)
@@ -12,8 +36,11 @@ protocol NoteTextViewDelegate: AnyObject {
     func noteRemindClicked(tokenRange: NSRange, dateRange: NSRange?)
     /// "/" typed on an empty line — show the command menu.
     func noteSlashTyped(slashAt location: Int)
-    /// Click on a [[wiki link]] — jump to (or create) that note.
     func noteOpenWiki(_ title: String)
+    /// User clicked a ⟦token⟧ — show expand / open menu.
+    func noteImageTokenClicked(filename: String, url: URL, at screen: NSPoint)
+    /// User clicked an inline image — show collapse / open menu.
+    func noteInlineImageClicked(filename: String, url: URL, at screen: NSPoint)
     /// "[[" just typed — offer note titles to complete.
     func noteWikiTyped(at location: Int)
     /// Does a note with this title exist? (drives link styling)
@@ -46,6 +73,10 @@ final class NoteTextView: NSTextView {
     private var remindTokens: [(token: NSRange, dateRange: NSRange?)] = []
     private var wikiLinks: [(range: NSRange, title: String)] = []
     private var slashMenuTimer: Timer?
+    /// Which image filenames are rendered inline for this note.
+    var inlineImages: Set<String> = []
+    /// Prevents re-entrant didChangeText while we modify textStorage for attachments.
+    var isApplyingInlineImages = false
 
     /// Per-sticky zoom (⌘+ / ⌘−); all derived fonts scale from this.
     var baseFontSize: CGFloat = 13 {
@@ -596,7 +627,15 @@ final class NoteTextView: NSTextView {
         let point = convert(event.locationInWindow, from: nil)
         let index = characterIndexForInsertion(at: point)
         for (range, url) in tokenLinks where NSLocationInRange(index, range) {
-            NSWorkspace.shared.open(url.resolvingSymlinksInPath())
+            let sp = window?.convertPoint(toScreen: event.locationInWindow) ?? .zero
+            noteDelegate?.noteImageTokenClicked(filename: url.lastPathComponent, url: url, at: sp)
+            return
+        }
+        // click on an inline image attachment
+        if index < (string as NSString).length,
+           let att = textStorage?.attribute(.attachment, at: index, effectiveRange: nil) as? InlineImageAttachment {
+            let sp = window?.convertPoint(toScreen: event.locationInWindow) ?? .zero
+            noteDelegate?.noteInlineImageClicked(filename: att.filename, url: att.imageURL, at: sp)
             return
         }
         for (token, dateRange) in remindTokens where NSLocationInRange(index, token) {
@@ -679,6 +718,76 @@ final class NoteTextView: NSTextView {
             return rep.representation(using: .png, properties: [:])
         }
         return nil
+    }
+
+    // MARK: Inline images
+
+    /// Replace every ⟦filename⟧ token whose filename is in inlineImages with an
+    /// NSTextAttachment. Processes in reverse so index shifts don't corrupt positions.
+    func applyInlineImages() {
+        guard !inlineImages.isEmpty, let dir = attachmentsDir,
+              let storage = textStorage,
+              let regex = try? NSRegularExpression(pattern: Markup.tokenPattern)
+        else { return }
+        let text = storage.string
+        let full = NSRange(location: 0, length: (text as NSString).length)
+        var hits: [(NSRange, String)] = []
+        regex.enumerateMatches(in: text, range: full) { match, _, _ in
+            guard let m = match else { return }
+            let name = (text as NSString).substring(with: m.range(at: 1))
+            guard inlineImages.contains(name) else { return }
+            let url = dir.appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: url.path) else { return }
+            hits.append((m.range, name))
+        }
+        guard !hits.isEmpty else { return }
+        isApplyingInlineImages = true
+        storage.beginEditing()
+        for (range, name) in hits.reversed() {
+            let url = dir.appendingPathComponent(name)
+            let att = InlineImageAttachment(filename: name, imageURL: url, maxWidth: containerWidth)
+            let attrStr = NSMutableAttributedString(attachment: att)
+            if let f = self.font { attrStr.addAttribute(.font, value: f, range: NSRange(location: 0, length: attrStr.length)) }
+            storage.replaceCharacters(in: range, with: attrStr)
+        }
+        storage.endEditing()
+        isApplyingInlineImages = false
+    }
+
+    /// Recompute all attachment bounds when the note is resized.
+    func updateInlineImageBounds() {
+        guard !inlineImages.isEmpty, let storage = textStorage else { return }
+        let w = containerWidth
+        isApplyingInlineImages = true
+        storage.beginEditing()
+        storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { val, range, _ in
+            guard let att = val as? InlineImageAttachment else { return }
+            att.reload(maxWidth: w)
+            storage.addAttribute(.attachment, value: att, range: range)
+        }
+        storage.endEditing()
+        isApplyingInlineImages = false
+        layoutManager?.invalidateLayout(forCharacterRange: NSRange(location: 0, length: storage.length), actualCharacterRange: nil)
+    }
+
+    /// The displayed string with \uFFFC attachment chars converted back to
+    /// ⟦filename⟧ tokens — used by saveBody() so disk markdown stays clean.
+    var displayStringWithTokens: String {
+        guard let storage = textStorage, !inlineImages.isEmpty else { return string }
+        var out = ""
+        for i in 0..<storage.length {
+            if let att = storage.attribute(.attachment, at: i, effectiveRange: nil) as? InlineImageAttachment {
+                out += "⟦\(att.filename)⟧"
+            } else {
+                let c = (storage.string as NSString).character(at: i)
+                if let sc = Unicode.Scalar(c) { out.append(Character(sc)) }
+            }
+        }
+        return out
+    }
+
+    var containerWidth: CGFloat {
+        (textContainer?.size.width ?? frame.width) - textContainerInset.width * 2
     }
 
     // MARK: Placeholder
