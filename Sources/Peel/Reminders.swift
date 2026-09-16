@@ -51,6 +51,11 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
     var onFire: ((String, String) -> Void)?
 
     private var timers: [String: Timer] = [:]
+    /// IDs of one-shot timers that have already fired. sync() skips these so a
+    /// relative-time reminder (e.g. "@remind in 1 min") doesn't re-arm on every
+    /// reconcile poll. Cleared when the note body changes.
+    private var completedTimerIDs: Set<String> = []
+    private var lastBodyHash: [String: Int] = [:] // noteID → hash of body when last synced
 
     func sync(note: Note) {
         var wanted: [String: (match: When.Match, text: String, line: String)] = [:]
@@ -66,6 +71,14 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
             wanted["peel.\(note.id).\(stableHash(trimmed))"] = (match, text, trimmed)
         }
 
+        // Clear the "already fired" set if the body changed (user edited the reminder).
+        var hasher = Hasher(); hasher.combine(note.body); let bodyHash = hasher.finalize()
+        if lastBodyHash[note.id] != bodyHash {
+            lastBodyHash[note.id] = bodyHash
+            let prefix2 = "peel.\(note.id)."
+            completedTimerIDs = completedTimerIDs.filter { !$0.hasPrefix(prefix2) }
+        }
+
         // The primary path: in-app timers. Works regardless of notification
         // permission, alert styles, Focus modes, or signing identity.
         // Recurring reminders re-arm themselves after each fire.
@@ -74,7 +87,7 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
             timer.invalidate()
             timers[id] = nil
         }
-        for (id, item) in wanted where timers[id] == nil {
+        for (id, item) in wanted where timers[id] == nil && !completedTimerIDs.contains(id) {
             scheduleTimer(id: id, noteID: note.id, fireAt: item.match.date,
                           text: item.text, line: item.line)
         }
@@ -138,11 +151,16 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
     private func fire(id: String, noteID: String, text: String, line: String) {
         timers[id] = nil
         if let next = When.detect(in: line), next.repeats != .none {
-            // recurring: arm the next occurrence
+            // Recurring: arm the next occurrence.
             scheduleTimer(id: id, noteID: noteID, fireAt: next.date, text: text, line: line)
-        } else if Reminders.isAvailable {
-            // one-shot, the app is alive and presenting this itself: no system double
-            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
+        } else {
+            // One-shot: mark done so sync() won't re-arm on next reconcile poll.
+            // Without this, "@remind in 1 min" computes a fresh future date on
+            // every sync() call and fires indefinitely.
+            completedTimerIDs.insert(id)
+            if Reminders.isAvailable {
+                UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [id])
+            }
         }
         onFire?(noteID, text)
     }
@@ -163,6 +181,8 @@ final class Reminders: NSObject, UNUserNotificationCenterDelegate {
             timer.invalidate()
             timers[id] = nil
         }
+        completedTimerIDs = completedTimerIDs.filter { !$0.hasPrefix(prefix) }
+        lastBodyHash[noteID] = nil
         guard Reminders.isAvailable else { return }
         let center = UNUserNotificationCenter.current()
         scheduled[noteID] = nil

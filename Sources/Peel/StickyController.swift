@@ -332,7 +332,8 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         if ghost, note.locked { return } // pinned opaque never fades
         if ghost, panel.isKeyWindow, !force { return }
         if ghost, expandedFrame != nil { return } // already collapsed by hand
-        isGhosted = ghost
+        if ghost { isGhosted = true } // cleared AFTER un-ghost animation so
+        // HeaderView.mouseDown can't start a drag from the wrong origin
         let target: NSRect
         if ghost {
             preGhostFrame = panel.frame
@@ -344,14 +345,13 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
             target = preGhostFrame ?? panel.frame
             preGhostFrame = nil
         }
-        // Fade the CONTENT, not the window: lowering the whole window's
-        // alphaValue makes macOS composite a bright halo around the rounded
-        // corners. Fading the clip layer keeps the window opaque and clean.
         panel.hasShadow = !ghost
-        animatingFrame(0.22) { [clip, panel] in
+        animatingFrame(0.22, { [clip, panel] in
             clip.animator().alphaValue = ghost ? 0.5 : 1.0
             panel.animator().setFrame(target, display: true)
-        }
+        }, completion: { [weak self] in
+            if !ghost { self?.isGhosted = false } // safe to drag again
+        })
     }
 
     /// ⌃⌥L, /lock, or the menu: pin the sticky opaque (never ghosts).
@@ -972,22 +972,35 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     func captureScreenshot() {
         let dest = store.attachmentsDir(for: note.id, create: true)
             .appendingPathComponent(nextIndexedName(prefix: "screenshot"))
-        let wasVisible = panel.isVisible
-        let caret = textView.selectedRange() // token goes back where you were typing
-        if wasVisible { panel.orderOut(nil) } // don't photobomb your own screenshot
+        // Fade the note to near-invisible during capture so it doesn't photobomb
+        // the selection without fully disappearing (avoids permission re-prompts
+        // and lets the user reopen it immediately after).
+        clip.alphaValue = 0.08
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
         process.arguments = ["-i", dest.path]
         process.terminationHandler = { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self else { return }
-                if wasVisible { self.show(focus: false) }
-                if FileManager.default.fileExists(atPath: dest.path) {
-                    let length = (self.textView.string as NSString).length
-                    self.textView.setSelectedRange(NSRange(location: min(caret.location, length), length: 0))
-                    self.textView.insertPlain("⟦\(dest.lastPathComponent)⟧ ", at: nil)
-                    self.focusAfterAttach()
+                NSAnimationContext.runAnimationGroup { ctx in
+                    ctx.duration = 0.18
+                    self.clip.animator().alphaValue = 1.0
                 }
+                guard FileManager.default.fileExists(atPath: dest.path) else { return }
+                // Insert on a new line in the last-focused note
+                let ns = self.textView.string as NSString
+                let end = ns.length
+                var insertAt = min(self.textView.selectedRange().location, end)
+                // Ensure we're at a line boundary
+                var lineStart = 0
+                ns.getLineStart(&lineStart, end: nil, contentsEnd: nil,
+                                for: NSRange(location: insertAt, length: 0))
+                let prefix = insertAt > lineStart ? "\n" : ""
+                self.textView.setSelectedRange(NSRange(location: insertAt, length: 0))
+                if !prefix.isEmpty { self.textView.insertPlain(prefix, at: nil) }
+                insertAt = self.textView.selectedRange().location
+                self.textView.insertPlain("⟦\(dest.lastPathComponent)⟧ ", at: nil)
+                self.focusAfterAttach()
                 self.reloadAttachments()
             }
         }
