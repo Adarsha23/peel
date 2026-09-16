@@ -235,8 +235,8 @@ final class NoteTextView: NSTextView {
                                          range: dateRange)
                     storage.addAttribute(.underlineColor, value: NSColor.systemOrange, range: dateRange)
                     let when = NoteTextView.remindTip.string(from: match.date)
-                    let tip = match.repeats.label.map { "Repeats \($0), next \(when)" }
-                        ?? "Reminder: \(when)"
+                    let tip = match.repeats.label.map { "Recurring: repeats \($0). Next fire: \(when)" }
+                        ?? "Reminder set ✓ — fires \(when). Click to change time."
                     storage.addAttribute(.toolTip, value: tip, range: lineRange)
                     remindTokens.append((tokenRange, dateRange))
                 } else {

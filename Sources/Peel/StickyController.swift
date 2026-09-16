@@ -346,6 +346,7 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
             preGhostFrame = nil
         }
         panel.hasShadow = !ghost
+        header.showGhostHint(ghost)
         animatingFrame(0.22, { [clip, panel] in
             clip.animator().alphaValue = ghost ? 0.5 : 1.0
             panel.animator().setFrame(target, display: true)
@@ -654,7 +655,10 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 self.textView.insertPlain("@remind \(args) ", at: nil)
-                if When.detect(in: args) != nil { self.playChimePreview() }
+                if let m = When.detect(in: "@remind \(args)") {
+                    self.playChimePreview()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.showReminderConfirmation(match: m) }
+                }
             }
             return true
         }
@@ -811,11 +815,12 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     /// The menu inserts these exact phrases, so the free-text grammar teaches
     /// itself. Empty string = separator.
     private static let remindPhrases: [String] = [
-        "in 5 min", "in 30 min", "in 2 hours",
+        "in 5 min", "in 30 min", "in 1 hour", "in 2 hours",
         "", // one-shots above, absolutes below
         "tomorrow 9am", "tonight 8pm",
         "", // recurring
         "every day at 9am", "every weekday at 9:30am", "every weekend at 10am",
+        "every monday 9am",
     ]
 
     private static func preview(of phrase: String) -> String {
@@ -937,9 +942,59 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         }
         textView.scrollRangeToVisible(textView.selectedRange())
         playChimePreview()
+        // Show a 3-second inline confirmation so the user knows the reminder is armed
+        if let match = When.detect(in: textView.string.components(separatedBy: "\n")
+            .last(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("@remind") }) ?? "") {
+            showReminderConfirmation(match: match)
+        }
     }
 
     /// Soft preview of the reminder chime — confirms scheduling audibly.
+    /// Shows a slim green "Reminder set" banner at the bottom of the sticky for 3 seconds.
+    private func showReminderConfirmation(match: When.Match) {
+        guard let contentView = panel.contentView else { return }
+        let banner = NSView()
+        banner.wantsLayer = true
+        banner.layer?.cornerRadius = 6
+        banner.layer?.backgroundColor = NSColor.systemGreen.withAlphaComponent(0.85).cgColor
+        banner.translatesAutoresizingMaskIntoConstraints = false
+
+        let label = NSTextField(labelWithString: "")
+        let f = DateFormatter(); f.dateFormat = "EEE h:mm a"
+        let whenStr: String
+        if let repeatLabel = match.repeats.label {
+            whenStr = "repeats \(repeatLabel)"
+        } else {
+            whenStr = f.string(from: match.date)
+        }
+        label.stringValue = "⏰  Reminder set — fires \(whenStr)"
+        label.font = Theme.rounded(11.5, weight: .medium)
+        label.textColor = .white
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        banner.addSubview(label)
+        contentView.addSubview(banner)
+        NSLayoutConstraint.activate([
+            banner.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8),
+            banner.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
+            banner.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
+            banner.heightAnchor.constraint(equalToConstant: 28),
+            label.leadingAnchor.constraint(equalTo: banner.leadingAnchor, constant: 10),
+            label.centerYAnchor.constraint(equalTo: banner.centerYAnchor),
+        ])
+
+        banner.alphaValue = 0
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.2; banner.animator().alphaValue = 1
+        }, completionHandler: {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                NSAnimationContext.runAnimationGroup({ ctx in
+                    ctx.duration = 0.3; banner.animator().alphaValue = 0
+                }, completionHandler: { banner.removeFromSuperview() })
+            }
+        })
+    }
+
     private func playChimePreview() {
         guard let url = Bundle.main.url(forResource: "peel-chime", withExtension: "wav"),
               let sound = NSSound(contentsOf: url, byReference: true) else { return }
@@ -1389,7 +1444,7 @@ final class HeaderView: NSView {
         newButton.alphaValue = 0
         ghostButton.alphaValue = 0
         minimizeButton.alphaValue = 0
-        dotButton.alphaValue = 0.5
+        dotButton.alphaValue = 0.65
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -1411,6 +1466,28 @@ final class HeaderView: NSView {
             color.setFill()
             NSBezierPath(ovalIn: rect.insetBy(dx: 2.5, dy: 2.5)).fill()
             return true
+        }
+    }
+
+    /// "tap to restore" whisper shown while the note is ghosted
+    private lazy var ghostHintLabel: NSTextField = {
+        let f = NSTextField(labelWithString: "tap to restore")
+        f.font = Theme.rounded(9.5)
+        f.textColor = .secondaryLabelColor
+        f.alphaValue = 0
+        f.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(f)
+        NSLayoutConstraint.activate([
+            f.centerXAnchor.constraint(equalTo: centerXAnchor),
+            f.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+        return f
+    }()
+
+    func showGhostHint(_ show: Bool) {
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.2
+            ghostHintLabel.animator().alphaValue = show ? 0.7 : 0
         }
     }
 
