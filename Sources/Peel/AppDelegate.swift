@@ -108,11 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         startWatcher()
         reminders.activate()
-        // Pre-authorize screen capture so the permission dialog never appears
-        // mid-screenshot. On macOS 12+ this is a no-op if already granted.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            CGRequestScreenCaptureAccess()
-        }
+
         reminders.reveal = { [weak self] id in self?.reveal(id: id, focus: true) }
         expiry.onExpire = { [weak self] id in self?.expireNote(id) }
         reminders.onFire = { [weak self] noteID, text in
