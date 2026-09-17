@@ -448,6 +448,11 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     }
 
     func hide() {
+        if app.pendingScreenshotNoteID == note.id {
+            app.pendingScreenshotNoteID = nil
+            app.screenshotTimeout?.invalidate()
+        }
+        dismissScreenshotBanner()
         flushPendingSave()
         note.open = false
         persist(touch: false)
@@ -588,10 +593,17 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     func windowDidResignKey(_ notification: Notification) {
         touchActivity()
         flushPendingSave()
-        // Ghost and collapse immediately when the user clicks anywhere outside.
-        // Locked notes and notes already being hidden/docked are exempt.
         guard panel.isVisible, note.open, !isDocking else { return }
-        setGhost(true, force: true)
+        // Don't ghost while waiting for a screenshot from the clipboard watcher
+        if app.pendingScreenshotNoteID == note.id { return }
+        // Short delay: if the mouse button is still held after 0.12s it's a drag
+        // (user is dragging a file from another app to this note). Don't ghost.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            guard let self, self.panel.isVisible, self.note.open, !self.isDocking else { return }
+            if self.app.pendingScreenshotNoteID == self.note.id { return }
+            if NSEvent.pressedMouseButtons != 0 { return } // drag in progress — skip
+            self.setGhost(true, force: true)
+        }
     }
 
     private func scheduleFrameSave() {
@@ -1028,35 +1040,73 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
         if strip.isHidden != wasHidden { autoFitHeight() } // strip changes total height
     }
 
+    /// Registers this note as the target for the next clipboard screenshot.
+    /// The user takes the screenshot normally with ⌘⇧Ctrl4; the clipboard watcher
+    /// fires and inserts it here automatically. Zero permissions needed.
     func captureScreenshot() {
-        let dest = store.attachmentsDir(for: note.id, create: true)
-            .appendingPathComponent(nextIndexedName(prefix: "screenshot"))
-        let screen = panel.screen ?? NSScreen.main
-
-        // Fade the note so it doesn't appear in the selection area.
-        clip.alphaValue = 0.08
-
-        ScreenshotCapture.run(on: screen) { [weak self] cgImage in
-            guard let self else { return }
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.18
-                self.clip.animator().alphaValue = 1.0
-            }
-            guard let cgImage else { return }
-            let rep = NSBitmapImageRep(cgImage: cgImage)
-            guard let data = rep.representation(using: .png, properties: [:]) else { return }
-            try? data.write(to: dest)
-            // Insert on a new line in the focused note
-            let ns = self.textView.string as NSString
-            var insertAt = min(self.textView.selectedRange().location, ns.length)
-            var lineStart = 0
-            ns.getLineStart(&lineStart, end: nil, contentsEnd: nil,
-                            for: NSRange(location: insertAt, length: 0))
-            if insertAt > lineStart { self.textView.insertPlain("\n", at: nil) }
-            self.textView.insertPlain("⟦\(dest.lastPathComponent)⟧ ", at: nil)
-            self.focusAfterAttach()
-            self.reloadAttachments()
+        app.pendingScreenshotNoteID = note.id
+        app.screenshotTimeout?.invalidate()
+        app.screenshotTimeout = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in
+            self?.app.pendingScreenshotNoteID = nil
+            self?.dismissScreenshotBanner()
         }
+        showScreenshotBanner()
+    }
+
+    func insertImageData(_ data: Data) {
+        guard let stored = store.attach(data: data, named: nextIndexedName(prefix: "screenshot"),
+                                        to: note.id) else { return }
+        if !note.open { show(focus: true) }
+        let ns = textView.string as NSString
+        var insertAt = min(textView.selectedRange().location, ns.length)
+        var lineStart = 0
+        ns.getLineStart(&lineStart, end: nil, contentsEnd: nil,
+                        for: NSRange(location: insertAt, length: 0))
+        if insertAt > lineStart { textView.insertPlain("\n", at: nil) }
+        textView.insertPlain("⟦\(stored.lastPathComponent)⟧ ", at: nil)
+        dismissScreenshotBanner()
+        focusAfterAttach()
+        reloadAttachments()
+    }
+
+    private var screenshotBannerView: NSView?
+
+    private func showScreenshotBanner() {
+        guard let contentView = panel.contentView else { return }
+        dismissScreenshotBanner()
+        let banner = NSView()
+        banner.wantsLayer = true
+        banner.layer?.cornerRadius = 6
+        banner.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.88).cgColor
+        banner.translatesAutoresizingMaskIntoConstraints = false
+        let label = NSTextField(labelWithString: "⌘⇧Ctrl4 → select area → lands here automatically  ·  esc to cancel")
+        label.font = Theme.rounded(11, weight: .medium)
+        label.textColor = .white
+        label.lineBreakMode = .byTruncatingTail
+        label.translatesAutoresizingMaskIntoConstraints = false
+        banner.addSubview(label)
+        contentView.addSubview(banner)
+        screenshotBannerView = banner
+        NSLayoutConstraint.activate([
+            banner.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8),
+            banner.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
+            banner.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
+            banner.heightAnchor.constraint(equalToConstant: 26),
+            label.leadingAnchor.constraint(equalTo: banner.leadingAnchor, constant: 8),
+            label.trailingAnchor.constraint(equalTo: banner.trailingAnchor, constant: -8),
+            label.centerYAnchor.constraint(equalTo: banner.centerYAnchor),
+        ])
+        banner.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { ctx in ctx.duration = 0.18; banner.animator().alphaValue = 1 }
+        if !panel.isVisible { show(focus: false) }
+    }
+
+    private func dismissScreenshotBanner() {
+        guard let v = screenshotBannerView else { return }
+        screenshotBannerView = nil
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.15; v.animator().alphaValue = 0
+        }, completionHandler: { v.removeFromSuperview() })
     }
 
     private static let timestampFormatter: DateFormatter = {

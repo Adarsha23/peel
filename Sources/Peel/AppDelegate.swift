@@ -52,6 +52,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var shelf = ShelfController(app: self)
     private let reminderAlert = ReminderAlert()
     private let clipboardWatcher = ClipboardWatcher()
+    /// Set when the user presses ⌃⌥S — next clipboard image goes to this note.
+    var pendingScreenshotNoteID: String?
+    var screenshotTimeout: Timer?
     private var colorRotation = 0
     private var recentNoteOrder: [String] = [] // MRU for ⌃Tab switch
     private var gitTimer: Timer?
@@ -102,7 +105,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         shelf.start(edge: ShelfEdge(rawValue: config.shelfEdge ?? "") ?? .bottom)
         clipboardWatcher.start()
-        clipboardWatcher.onCapture = { _, _ in } // URL stored in cache, used at paste time
+        clipboardWatcher.onCapture = { [weak self] data, url in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                // If a note is waiting for a screenshot, insert it there first
+                if let noteID = self.pendingScreenshotNoteID {
+                    self.pendingScreenshotNoteID = nil
+                    self.screenshotTimeout?.invalidate()
+                    self.screenshotTimeout = nil
+                    self.controllers[noteID]?.insertImageData(data)
+                }
+                // URL cached regardless (for the source-URL feature)
+            }
+        }
         idleTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.idleSweep()
         }
