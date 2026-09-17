@@ -1031,39 +1031,32 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     func captureScreenshot() {
         let dest = store.attachmentsDir(for: note.id, create: true)
             .appendingPathComponent(nextIndexedName(prefix: "screenshot"))
-        // Fade the note to near-invisible during capture so it doesn't photobomb
-        // the selection without fully disappearing (avoids permission re-prompts
-        // and lets the user reopen it immediately after).
+        let screen = panel.screen ?? NSScreen.main
+
+        // Fade the note so it doesn't appear in the selection area.
         clip.alphaValue = 0.08
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        process.arguments = ["-i", dest.path]
-        process.terminationHandler = { [weak self] _ in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                NSAnimationContext.runAnimationGroup { ctx in
-                    ctx.duration = 0.18
-                    self.clip.animator().alphaValue = 1.0
-                }
-                guard FileManager.default.fileExists(atPath: dest.path) else { return }
-                // Insert on a new line in the last-focused note
-                let ns = self.textView.string as NSString
-                let end = ns.length
-                var insertAt = min(self.textView.selectedRange().location, end)
-                // Ensure we're at a line boundary
-                var lineStart = 0
-                ns.getLineStart(&lineStart, end: nil, contentsEnd: nil,
-                                for: NSRange(location: insertAt, length: 0))
-                let prefix = insertAt > lineStart ? "\n" : ""
-                self.textView.setSelectedRange(NSRange(location: insertAt, length: 0))
-                if !prefix.isEmpty { self.textView.insertPlain(prefix, at: nil) }
-                insertAt = self.textView.selectedRange().location
-                self.textView.insertPlain("⟦\(dest.lastPathComponent)⟧ ", at: nil)
-                self.focusAfterAttach()
-                self.reloadAttachments()
+
+        ScreenshotCapture.run(on: screen) { [weak self] cgImage in
+            guard let self else { return }
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.18
+                self.clip.animator().alphaValue = 1.0
             }
+            guard let cgImage else { return }
+            let rep = NSBitmapImageRep(cgImage: cgImage)
+            guard let data = rep.representation(using: .png, properties: [:]) else { return }
+            try? data.write(to: dest)
+            // Insert on a new line in the focused note
+            let ns = self.textView.string as NSString
+            var insertAt = min(self.textView.selectedRange().location, ns.length)
+            var lineStart = 0
+            ns.getLineStart(&lineStart, end: nil, contentsEnd: nil,
+                            for: NSRange(location: insertAt, length: 0))
+            if insertAt > lineStart { self.textView.insertPlain("\n", at: nil) }
+            self.textView.insertPlain("⟦\(dest.lastPathComponent)⟧ ", at: nil)
+            self.focusAfterAttach()
+            self.reloadAttachments()
         }
-        try? process.run()
     }
 
     private static let timestampFormatter: DateFormatter = {
