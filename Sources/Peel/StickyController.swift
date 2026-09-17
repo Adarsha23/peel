@@ -588,6 +588,10 @@ final class StickyController: NSResponder, NSWindowDelegate, NoteTextViewDelegat
     func windowDidResignKey(_ notification: Notification) {
         touchActivity()
         flushPendingSave()
+        // Ghost and collapse immediately when the user clicks anywhere outside.
+        // Locked notes and notes already being hidden/docked are exempt.
+        guard panel.isVisible, note.open, !isDocking else { return }
+        setGhost(true, force: true)
     }
 
     private func scheduleFrameSave() {
